@@ -80,6 +80,7 @@ struct VideoPlayerView: View {
             saveProgress()
         }
         .focusable()
+        .focusEffectDisabled() // Remove blue focus ring
         .onKeyPress { keyPress in
             handleKeyPress(keyPress)
         }
@@ -510,12 +511,22 @@ class PlayerController: ObservableObject {
     func load(url: URL) {
         playbackErrorMessage = nil
         
-        let asset = AVURLAsset(url: url)
+        // Create asset with optimized loading options
+        let asset = AVURLAsset(url: url, options: [
+            AVURLAssetPreferPreciseDurationAndTimingKey: false // Faster loading for local files
+        ])
+        
         let playerItem = AVPlayerItem(asset: asset)
+        
+        // Buffer optimization for local files
+        playerItem.preferredForwardBufferDuration = 5.0 // 5 seconds ahead
+        
         player = AVPlayer(playerItem: playerItem)
         
-        // Prevent external playback (AirPlay) from hijacking video rendering.
-        player?.allowsExternalPlayback = false
+        // Performance settings
+        player?.allowsExternalPlayback = false // Prevent AirPlay hijacking
+        player?.automaticallyWaitsToMinimizeStalling = false // Local files don't need stall prevention
+        player?.preventsDisplaySleepDuringVideoPlayback = true
         
         // Observe status to surface errors like "audio plays but no video / can't decode".
         statusObserver = playerItem.observe(\.status, options: [.initial, .new]) { [weak self] item, _ in
@@ -696,12 +707,28 @@ struct VideoPlayerRepresentable: NSViewRepresentable {
         playerView.showsFullScreenToggleButton = false
         playerView.allowsPictureInPicturePlayback = true
         playerView.videoGravity = .resizeAspect
-        playerView.focusRingType = .none // remove blue focus ring border
+        playerView.focusRingType = .none // Remove blue focus ring border
+        
+        // Performance optimizations
+        playerView.wantsLayer = true
+        playerView.layerContentsRedrawPolicy = .onSetNeedsDisplay
+        playerView.canDrawSubviewsIntoLayer = true // Flatten view hierarchy for GPU
+        
+        // Optimize layer for video content
+        if let layer = playerView.layer {
+            layer.drawsAsynchronously = true
+            layer.shouldRasterize = false // Don't rasterize video content
+            layer.isOpaque = true
+        }
+        
         return playerView
     }
     
     func updateNSView(_ nsView: AVPlayerView, context: Context) {
-        nsView.player = player
+        // Only update player if it changed (avoid unnecessary work)
+        if nsView.player !== player {
+            nsView.player = player
+        }
     }
 }
 

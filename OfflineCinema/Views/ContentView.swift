@@ -148,8 +148,15 @@ private struct BooksChromeView: View {
     }
     
     private var leftInset: CGFloat {
-        if isWindowFullScreen { return 0 }
-        return showSidebar ? (outerInset + sidebarWidth + gap) : outerInset
+        // Edge-to-edge when fullscreen or playing video with sidebar hidden
+        if isWindowFullScreen || (library.isPlaying && !sidebarVisible) { return 0 }
+        
+        if showSidebar {
+            // When playing video, remove the gap so canvas starts right at sidebar edge
+            let effectiveGap = library.isPlaying ? 0 : gap
+            return outerInset + sidebarWidth + effectiveGap
+        }
+        return outerInset
     }
     
     private var detailPanelShape: UnevenRoundedRectangle {

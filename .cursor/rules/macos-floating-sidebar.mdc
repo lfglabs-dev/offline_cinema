@@ -1,14 +1,12 @@
 ---
-description: macOS Books-style floating sidebar without glassy titlebar
-globs: ["**/*.swift"]
+description: macOS Books-style UI patterns and native app best practices
+globs: ["**/*.swift", "**/Info.plist", "**/*.entitlements"]
 alwaysApply: false
 ---
 
-# macOS Floating Sidebar (Books-style)
+# macOS Native App Best Practices
 
-## Key Configuration
-
-To achieve a floating glass sidebar **without** the system's glassy titlebar:
+## Floating Sidebar (Books-style)
 
 ### Window Style
 ```swift
@@ -27,12 +25,116 @@ window.isMovableByWindowBackground = true
 
 ### Floating Sidebar Panel
 - Use ZStack overlay approach (not NSSplitViewController for custom floating)
-- Sidebar inset from edges with padding (12-16pt)
+- Sidebar inset from edges with padding (10-14pt)
 - Rounded corners with `.continuous` style
 - NSVisualEffectView with `.sidebar` material, `.withinWindow` blending
-- Dark base layer (opacity ~0.85) + glass overlay (opacity ~0.5)
-- Shadow for depth: `shadow(color: .black.opacity(0.4), radius: 20)`
+- Dark base layer (opacity ~0.65) + glass overlay
+- Shadow for depth: `shadow(color: .black.opacity(0.45), radius: 28)`
+
+### Traffic Lights Positioning
+Use a `TrafficLightsPositioner` class to offset window buttons:
+- Observe `didResizeNotification`, `didMoveNotification`, `didEndLiveResizeNotification`
+- Capture window weakly in closures to prevent retain cycles
+- Store baseline positions using `objc_setAssociatedObject` to prevent offset accumulation
 
 ### Content Layout
 - Detail view: NO top padding (runs under titlebar area)
 - Sidebar: includes titlebar spacer (~52pt) so content starts below traffic lights
+- When video playing + sidebar hidden: remove ALL insets for edge-to-edge playback
+
+---
+
+## macOS Quality-of-Life Improvements
+
+### Info.plist Essentials
+
+| Key | Purpose |
+|-----|---------|
+| `CFBundleIconFile` | App icon (AppIcon.icns) |
+| `LSApplicationCategoryType` | App Store category (e.g., `public.app-category.video`) |
+| `NSHighResolutionCapable` | Retina/HiDPI support (always `true`) |
+| `NSRequiresAquaSystemAppearance` | Dark mode support (`false` = automatic) |
+| `NSHumanReadableCopyright` | Copyright for About dialog |
+| `NSSupportsAutomaticTermination` | System can auto-quit idle apps |
+| `CFBundleDocumentTypes` | File types the app can open |
+| `UTImportedTypeDeclarations` | Custom UTI definitions |
+
+### Entitlements (Sandbox)
+
+| Key | Purpose |
+|-----|---------|
+| `com.apple.security.app-sandbox` | Enable sandbox (required for App Store) |
+| `com.apple.security.files.user-selected.read-write` | Access user-picked files |
+| `com.apple.security.files.bookmarks.app-scope` | Persist file access across launches |
+
+### Video Player Optimizations
+
+```swift
+// AVURLAsset - faster loading for local files
+AVURLAsset(url: url, options: [AVURLAssetPreferPreciseDurationAndTimingKey: false])
+
+// AVPlayerItem - buffer optimization
+playerItem.preferredForwardBufferDuration = 5.0
+
+// AVPlayer - performance settings
+player.automaticallyWaitsToMinimizeStalling = false  // Local files
+player.preventsDisplaySleepDuringVideoPlayback = true
+
+// AVPlayerView layer optimizations
+playerView.wantsLayer = true
+playerView.canDrawSubviewsIntoLayer = true
+playerView.layer?.drawsAsynchronously = true
+playerView.layer?.isOpaque = true
+playerView.focusRingType = .none
+```
+
+### SwiftUI Focus Ring
+```swift
+.focusable()
+.focusEffectDisabled()  // Remove blue focus ring, keep keyboard input
+```
+
+### Security-Scoped Resources
+Always pair `startAccessingSecurityScopedResource()` with cleanup:
+```swift
+if url.startAccessingSecurityScopedResource() {
+    securityScopedURL = url
+}
+// Later in cleanup:
+securityScopedURL?.stopAccessingSecurityScopedResource()
+```
+
+### Timer in SwiftUI Views
+Avoid `Timer.scheduledTimer` capturing struct `self`. Use `Task.sleep` instead:
+```swift
+@State private var timerActive = false
+
+func startTimer() {
+    timerActive = true
+    Task { @MainActor in
+        try? await Task.sleep(for: .seconds(3))
+        guard timerActive else { return }
+        // Safe to modify @State here
+    }
+}
+```
+
+### Notification Observers
+Always capture objects weakly to prevent retain cycles:
+```swift
+center.addObserver(forName: .didResize, object: window, queue: .main) { [weak self, weak window] _ in
+    guard let self, let window else { return }
+    // Safe to use both
+}
+```
+
+---
+
+## User Avatar (iCloud/Contacts)
+
+To display the user's Apple ID avatar:
+1. Import `Contacts` framework
+2. Request access: `CNContactStore().requestAccess(for: .contacts)`
+3. Fetch "Me" card: `store.unifiedMeContactWithKeys(toFetch: [CNContactImageDataKey])`
+4. Add `NSContactsUsageDescription` to Info.plist
+5. Fallback to gradient + initial from `NSFullUserName()`

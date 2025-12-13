@@ -16,8 +16,36 @@
     <string>APPL</string>
     <key>CFBundleExecutable</key>
     <string>OfflineCinema</string>
+    <key>CFBundleIconFile</key>
+    <string>AppIcon</string>
     <key>LSMinimumSystemVersion</key>
     <string>14.0</string>
+    
+    <!-- App Category for App Store / Launchpad -->
+    <key>LSApplicationCategoryType</key>
+    <string>public.app-category.video</string>
+    
+    <!-- Retina / HiDPI support -->
+    <key>NSHighResolutionCapable</key>
+    <true/>
+    
+    <!-- Dark Mode support (automatic) -->
+    <key>NSRequiresAquaSystemAppearance</key>
+    <false/>
+    
+    <!-- Copyright for About dialog -->
+    <key>NSHumanReadableCopyright</key>
+    <string>Copyright © 2024. All rights reserved.</string>
+    
+    <!-- Allow system to manage app lifecycle -->
+    <key>NSSupportsAutomaticTermination</key>
+    <true/>
+    <key>NSSupportsSuddenTermination</key>
+    <false/>
+    
+    <!-- Prevent display sleep during video playback -->
+    <key>NSAppSleepDisabled</key>
+    <false/>
     <key>CFBundleDocumentTypes</key>
     <array>
         <dict>
