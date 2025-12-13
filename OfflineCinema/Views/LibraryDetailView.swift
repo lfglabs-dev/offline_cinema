@@ -57,7 +57,12 @@ struct LibraryDetailView: View {
             if let url = notification.object as? URL {
                 Task {
                     await library.importVideo(from: url)
-                    if let video = library.videos.first(where: { $0.resolvedURL == url }) {
+                    // Use path comparison (consistent with importVideo's duplicate check)
+                    let importPath = url.standardizedFileURL.path
+                    if let video = library.videos.first(where: { video in
+                        guard let existingURL = video.resolvedURL else { return false }
+                        return existingURL.standardizedFileURL.path == importPath
+                    }) {
                         library.playVideo(video)
                     }
                 }

@@ -380,11 +380,12 @@ struct VideoPlayerView: View {
         
         playerController.load(url: url)
         
-        // Resume from last position if available (guard against division by zero)
+        // Resume from last position if available
+        // Use absolute time seek (not percentage) since duration isn't loaded yet
         if let progress = video.watchProgress, progress.position > 0, video.duration > 0 {
-            let resumePosition = progress.position / video.duration
-            if resumePosition < 0.95 { // Don't resume if almost finished
-                playerController.seek(to: resumePosition)
+            let progressPercent = progress.position / video.duration
+            if progressPercent < 0.95 { // Don't resume if almost finished
+                playerController.seekToTime(progress.position)
             }
         }
         
@@ -494,6 +495,9 @@ class PlayerController: ObservableObject {
     @Published var isPiPSupported = false
     @Published var playbackErrorMessage: String?
     
+    /// Pending seek time for resume (set before duration is loaded)
+    var pendingSeekTime: TimeInterval?
+    
     @Published var subtitleOptions: [AVMediaSelectionOption]?
     @Published var audioOptions: [AVMediaSelectionOption]?
     
@@ -572,6 +576,12 @@ class PlayerController: ObservableObject {
         Task {
             if let duration = try? await player?.currentItem?.asset.load(.duration) {
                 self.duration = CMTimeGetSeconds(duration)
+                
+                // Update progress if we had a pending seek (for resume)
+                if let seekTime = self.pendingSeekTime, self.duration > 0 {
+                    self.progress = seekTime / self.duration
+                    self.pendingSeekTime = nil
+                }
             }
             
             // Load media selection options
@@ -620,10 +630,19 @@ class PlayerController: ObservableObject {
     }
     
     func seek(to progress: Double) {
+        guard duration > 0 else { return }
         let targetTime = CMTime(seconds: duration * progress, preferredTimescale: 600)
         player?.seek(to: targetTime, toleranceBefore: .zero, toleranceAfter: .zero)
         self.progress = progress
         currentTime = duration * progress
+    }
+    
+    /// Seek to an absolute time position (used for resume before duration is loaded)
+    func seekToTime(_ seconds: TimeInterval) {
+        pendingSeekTime = seconds
+        let targetTime = CMTime(seconds: seconds, preferredTimescale: 600)
+        player?.seek(to: targetTime, toleranceBefore: .zero, toleranceAfter: .zero)
+        currentTime = seconds
     }
     
     func skip(seconds: Double) {
