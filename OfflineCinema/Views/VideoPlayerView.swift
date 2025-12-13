@@ -26,7 +26,7 @@ struct VideoPlayerView: View {
             
             // Video player
             if let player = playerController.player {
-                VideoPlayerRepresentable(player: player)
+                VideoPlayerRepresentable(player: player, playerController: playerController)
                     .ignoresSafeArea()
                     .onTapGesture {
                         toggleControls()
@@ -506,6 +506,9 @@ class PlayerController: ObservableObject {
     private var playerLayer: AVPlayerLayer?
     private var statusObserver: NSKeyValueObservation?
     
+    /// Weak reference to AVPlayerView for PiP control (set by VideoPlayerRepresentable)
+    weak var playerView: AVPlayerView?
+    
     var currentTimeFormatted: String {
         formatTime(currentTime)
     }
@@ -649,6 +652,12 @@ class PlayerController: ObservableObject {
         let newTime = max(0, min(duration, currentTime + seconds))
         let targetTime = CMTime(seconds: newTime, preferredTimescale: 600)
         player?.seek(to: targetTime, toleranceBefore: .zero, toleranceAfter: .zero)
+        
+        // Update time display immediately (don't wait for time observer)
+        currentTime = newTime
+        if duration > 0 {
+            progress = newTime / duration
+        }
     }
     
     func setSpeed(_ rate: Float) {
@@ -682,15 +691,40 @@ class PlayerController: ObservableObject {
     }
     
     private func setupPiP() {
-        // PiP requires AVPlayerLayer; we'll check if it's possible
-        // Note: Full PiP implementation requires the AVPlayerView to expose its layer
         isPiPSupported = AVPictureInPictureController.isPictureInPictureSupported()
     }
     
     func togglePiP() {
-        // PiP toggle would be handled by the AVPlayerView's controller
-        // This is a simplified implementation
-        isPiPActive.toggle()
+        guard let playerView = playerView else { return }
+        
+        // AVPlayerView on macOS provides PiP through its internal picture-in-picture controller
+        // We access it via the pictureInPictureController property (available on AVPlayerView)
+        if #available(macOS 12.0, *) {
+            // Try to get the PiP controller from AVPlayerView
+            // AVPlayerView.allowsPictureInPicturePlayback must be true (set in VideoPlayerRepresentable)
+            if let pipController = playerView.value(forKey: "pictureInPictureController") as? AVPictureInPictureController {
+                if pipController.isPictureInPictureActive {
+                    pipController.stopPictureInPicture()
+                    isPiPActive = false
+                } else if pipController.isPictureInPicturePossible {
+                    pipController.startPictureInPicture()
+                    isPiPActive = true
+                }
+            }
+        }
+    }
+    
+    /// Called by VideoPlayerRepresentable when the player view is created
+    func setPlayerView(_ view: AVPlayerView) {
+        playerView = view
+        
+        // Observe PiP state changes from AVPlayerView's controller
+        if #available(macOS 12.0, *) {
+            if let pipController = view.value(forKey: "pictureInPictureController") as? AVPictureInPictureController {
+                self.pipController = pipController
+                // PiP controller will manage its own state; we just need to sync our UI
+            }
+        }
     }
     
     func cleanup() {
@@ -720,6 +754,7 @@ class PlayerController: ObservableObject {
 
 struct VideoPlayerRepresentable: NSViewRepresentable {
     let player: AVPlayer
+    let playerController: PlayerController
     
     func makeNSView(context: Context) -> AVPlayerView {
         let playerView = AVPlayerView()
@@ -740,6 +775,11 @@ struct VideoPlayerRepresentable: NSViewRepresentable {
             layer.drawsAsynchronously = true
             layer.shouldRasterize = false // Don't rasterize video content
             layer.isOpaque = true
+        }
+        
+        // Give the controller a reference to the player view for PiP
+        DispatchQueue.main.async {
+            playerController.setPlayerView(playerView)
         }
         
         return playerView
