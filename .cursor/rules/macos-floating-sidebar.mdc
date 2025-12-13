@@ -1,0 +1,38 @@
+---
+description: macOS Books-style floating sidebar without glassy titlebar
+globs: ["**/*.swift"]
+alwaysApply: false
+---
+
+# macOS Floating Sidebar (Books-style)
+
+## Key Configuration
+
+To achieve a floating glass sidebar **without** the system's glassy titlebar:
+
+### Window Style
+```swift
+.windowStyle(.hiddenTitleBar)  // NOT .automatic
+// Do NOT use .windowToolbarStyle() — it creates the glass bar
+```
+
+### AppDelegate Window Config
+```swift
+window.titlebarAppearsTransparent = true
+window.titleVisibility = .hidden
+window.toolbar = nil  // Critical: removes glass titlebar
+window.styleMask = [.titled, .closable, .miniaturizable, .resizable, .fullSizeContentView]
+window.isMovableByWindowBackground = true
+```
+
+### Floating Sidebar Panel
+- Use ZStack overlay approach (not NSSplitViewController for custom floating)
+- Sidebar inset from edges with padding (12-16pt)
+- Rounded corners with `.continuous` style
+- NSVisualEffectView with `.sidebar` material, `.withinWindow` blending
+- Dark base layer (opacity ~0.85) + glass overlay (opacity ~0.5)
+- Shadow for depth: `shadow(color: .black.opacity(0.4), radius: 20)`
+
+### Content Layout
+- Detail view: NO top padding (runs under titlebar area)
+- Sidebar: includes titlebar spacer (~52pt) so content starts below traffic lights

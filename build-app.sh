@@ -115,5 +115,12 @@ echo -n "APPL????" > "$CONTENTS_DIR/PkgInfo"
 echo "✅ App bundle created: $APP_BUNDLE"
 echo ""
 echo "🚀 Launching Offline Cinema..."
+
+# Quit any running instance so UI changes always apply
+osascript -e 'tell application "OfflineCinema" to quit' >/dev/null 2>&1 || true
+osascript -e 'tell application "Offline Cinema" to quit' >/dev/null 2>&1 || true
+pkill -x OfflineCinema >/dev/null 2>&1 || true
+sleep 0.5
+
 open "$APP_BUNDLE"
 

@@ -60,11 +60,9 @@ struct VideoGridView: View {
                     LazyVGrid(columns: columns, spacing: 24) {
                         ForEach(videos) { video in
                             VideoThumbnailCard(video: video)
-                                .onTapGesture(count: 2) {
-                                    library.playVideo(video)
-                                }
                                 .onTapGesture {
                                     library.selectedVideo = video
+                                    library.playVideo(video)
                                 }
                         }
                     }
@@ -75,7 +73,7 @@ struct VideoGridView: View {
         }
         .fileImporter(
             isPresented: $showFilePicker,
-            allowedContentTypes: [.movie, .mpeg4Movie, .quickTimeMovie, .avi, .mpeg],
+            allowedContentTypes: [.mpeg4Movie, .quickTimeMovie],
             allowsMultipleSelection: true
         ) { result in
             if case .success(let urls) = result {

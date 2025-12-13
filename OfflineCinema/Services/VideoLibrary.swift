@@ -25,6 +25,14 @@ enum LibraryFilter: String, CaseIterable, Identifiable {
         case .finished: return "checkmark.circle.fill"
         }
     }
+    
+    var iconOutlined: String {
+        switch self {
+        case .all: return "books.vertical"
+        case .watching: return "arrow.right.circle"
+        case .finished: return "checkmark.circle"
+        }
+    }
 }
 
 // MARK: - Sidebar Selection
@@ -47,6 +55,7 @@ class VideoLibrary: ObservableObject {
     @Published var isPlaying: Bool = false
     @Published var searchText: String = ""
     @Published var isLoading: Bool = false
+    @Published var lastImportErrorMessage: String?
     
     // MARK: - Services
     
@@ -153,6 +162,12 @@ class VideoLibrary: ObservableObject {
         
         // Generate metadata
         let metadata = await thumbnailGenerator.generateMetadata(for: url)
+        
+        // If there's no decodable video track, don't import (it will play audio-only / fail thumbnails).
+        if !metadata.hasVideoTrack {
+            lastImportErrorMessage = "This file doesn't contain a decodable video track. Try an MP4/MOV with H.264 or HEVC video."
+            return
+        }
         
         // Create video entry
         let video = Video(

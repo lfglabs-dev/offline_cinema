@@ -7,264 +7,14 @@
 
 import SwiftUI
 import AppKit
-import UniformTypeIdentifiers
 
 struct ContentView: View {
     @EnvironmentObject var library: VideoLibrary
-    @State private var showFilePicker = false
-    @State private var dragOver = false
-    @State private var searchText = ""
     
     var body: some View {
-        ZStack {
-            // Solid dark background like Books app
-            Color(nsColor: NSColor.windowBackgroundColor)
-                .ignoresSafeArea(.all)
-            
-            // Main layout
-            if library.isPlaying, let video = library.selectedVideo {
-                // Full-screen video player
-                VideoPlayerView(video: video)
-                    .transition(.opacity)
-            } else {
-                // Library view
-                mainLibraryLayout
-                    .transition(.opacity)
-            }
-        }
-        .frame(minWidth: 900, minHeight: 600)
-        .animation(.easeInOut(duration: 0.25), value: library.isPlaying)
-        .fileImporter(
-            isPresented: $showFilePicker,
-            allowedContentTypes: supportedVideoTypes,
-            allowsMultipleSelection: true
-        ) { result in
-            if case .success(let urls) = result {
-                Task {
-                    for url in urls {
-                        await library.importVideo(from: url)
-                    }
-                }
-            }
-        }
-        .onReceive(NotificationCenter.default.publisher(for: .importVideo)) { _ in
-            showFilePicker = true
-        }
-        .onReceive(NotificationCenter.default.publisher(for: .openVideoFile)) { notification in
-            if let url = notification.object as? URL {
-                Task {
-                    await library.importVideo(from: url)
-                    // Auto-play the imported video
-                    if let video = library.videos.first(where: { $0.resolvedURL == url }) {
-                        library.playVideo(video)
-                    }
-                }
-            }
-        }
-    }
-    
-    // MARK: - Main Library Layout
-    
-    private var mainLibraryLayout: some View {
-        HStack(spacing: 0) {
-            // Sidebar like Books app - solid background, no floating
-            SidebarView()
-                .frame(width: 240)
-                .background(Color(nsColor: NSColor.controlBackgroundColor).opacity(0.5))
-            
-            // Subtle separator
-            Rectangle()
-                .fill(Color.primary.opacity(0.1))
-                .frame(width: 1)
-            
-            // Main content area
-            mainContentArea
-                .frame(maxWidth: .infinity, maxHeight: .infinity)
-        }
-    }
-    
-    // MARK: - Main Content Area
-    
-    private var mainContentArea: some View {
-        ZStack {
-            // Video grid or drop zone
-            if library.videos.isEmpty {
-                dropZone
-            } else {
-                VideoGridView(videos: library.filteredVideos)
-            }
-            
-            // Drag overlay
-            if dragOver {
-                dragOverlay
-            }
-        }
-        .onDrop(of: [.fileURL], isTargeted: $dragOver) { providers in
-            handleDrop(providers: providers)
-        }
-    }
-    
-    // MARK: - Drop Zone
-    
-    private var dropZone: some View {
-        VStack(alignment: .leading, spacing: 0) {
-            // Title header like Books app
-            HStack(alignment: .center) {
-                Text(library.currentFilterTitle)
-                    .font(.system(size: 32, weight: .bold, design: .serif))
-                
-                Spacer()
-                
-                // Three-dot menu
-                Menu {
-                    Button {
-                        showFilePicker = true
-                    } label: {
-                        Label("Import Videos...", systemImage: "plus")
-                    }
-                } label: {
-                    Image(systemName: "ellipsis.circle")
-                        .font(.system(size: 18))
-                        .foregroundColor(.secondary)
-                }
-                .menuStyle(.borderlessButton)
-                .menuIndicator(.hidden)
-                .frame(width: 28, height: 28)
-            }
-            .padding(.horizontal, 24)
-            .padding(.top, 20)
-            .padding(.bottom, 20)
-            
-            // Drop zone content
-            VStack(spacing: 28) {
-                // Icon
-                ZStack {
-                    Circle()
-                        .fill(Color(hex: "DC2626").opacity(0.1))
-                        .frame(width: 88, height: 88)
-                    
-                    Circle()
-                        .strokeBorder(Color(hex: "DC2626").opacity(0.2), lineWidth: 1)
-                        .frame(width: 88, height: 88)
-                    
-                    Image(systemName: dragOver ? "arrow.down" : "play.rectangle.on.rectangle.fill")
-                        .font(.system(size: 32, weight: .medium))
-                        .foregroundColor(Color(hex: "DC2626"))
-                        .scaleEffect(dragOver ? 1.1 : 1.0)
-                }
-                .animation(.spring(response: 0.3), value: dragOver)
-                
-                VStack(spacing: 8) {
-                    Text("Drop videos to add to your library")
-                        .font(.system(size: 20, weight: .semibold))
-                        .foregroundColor(.primary)
-                    
-                    Text("MP4, MOV, MKV, AVI, and more")
-                        .font(.system(size: 13))
-                        .foregroundColor(.secondary)
-                }
-                
-                Button {
-                    showFilePicker = true
-                } label: {
-                    Text("Choose Files")
-                        .font(.system(size: 13, weight: .medium))
-                        .foregroundColor(.white)
-                        .padding(.horizontal, 24)
-                        .padding(.vertical, 10)
-                        .background {
-                            Capsule().fill(Color(hex: "DC2626"))
-                        }
-                }
-                .buttonStyle(.plain)
-            }
-            .frame(maxWidth: 380)
-            .padding(48)
-            .background {
-                RoundedRectangle(cornerRadius: 20)
-                    .fill(.primary.opacity(dragOver ? 0.04 : 0.02))
-                    .overlay {
-                        RoundedRectangle(cornerRadius: 20)
-                            .strokeBorder(
-                                dragOver ? Color(hex: "DC2626").opacity(0.5) : .primary.opacity(0.08),
-                                style: StrokeStyle(lineWidth: dragOver ? 2 : 1, dash: dragOver ? [] : [8, 6])
-                            )
-                    }
-            }
-            .scaleEffect(dragOver ? 1.01 : 1.0)
-            .animation(.spring(response: 0.3), value: dragOver)
-            .frame(maxWidth: .infinity, maxHeight: .infinity)
-        }
-    }
-    
-    // MARK: - Drag Overlay
-    
-    private var dragOverlay: some View {
-        ZStack {
-            RoundedRectangle(cornerRadius: 12)
-                .fill(Color(hex: "DC2626").opacity(0.1))
-            
-            VStack(spacing: 12) {
-                Image(systemName: "arrow.down.circle.fill")
-                    .font(.system(size: 40, weight: .medium))
-                    .foregroundColor(Color(hex: "DC2626"))
-                
-                Text("Drop to add to library")
-                    .font(.system(size: 16, weight: .semibold))
-                    .foregroundColor(Color(hex: "DC2626"))
-            }
-        }
-        .transition(.opacity)
-    }
-    
-    // MARK: - Helpers
-    
-    private var supportedVideoTypes: [UTType] {
-        [.movie, .mpeg4Movie, .quickTimeMovie, .avi, .mpeg]
-    }
-    
-    private func handleDrop(providers: [NSItemProvider]) -> Bool {
-        var handled = false
-        
-        for provider in providers {
-            if provider.hasItemConformingToTypeIdentifier("public.file-url") {
-                provider.loadItem(forTypeIdentifier: "public.file-url", options: nil) { item, _ in
-                    guard let data = item as? Data,
-                          let url = URL(dataRepresentation: data, relativeTo: nil) else { return }
-                    
-                    // Check if it's a video file
-                    let videoExtensions = ["mp4", "mov", "mkv", "avi", "m4v", "wmv", "webm", "flv", "3gp", "ogv"]
-                    let ext = url.pathExtension.lowercased()
-                    
-                    if videoExtensions.contains(ext) {
-                        Task { @MainActor in
-                            await library.importVideo(from: url)
-                        }
-                    }
-                }
-                handled = true
-            }
-        }
-        
-        return handled
-    }
-}
-
-// MARK: - Visual Effect Background
-
-struct VisualEffectBackground: NSViewRepresentable {
-    var material: NSVisualEffectView.Material = .sidebar
-    
-    func makeNSView(context: Context) -> NSVisualEffectView {
-        let view = NSVisualEffectView()
-        view.blendingMode = .behindWindow
-        view.state = .active
-        view.material = material
-        return view
-    }
-    
-    func updateNSView(_ nsView: NSVisualEffectView, context: Context) {
-        nsView.material = material
+        BooksChromeView()
+            .environmentObject(library)
+            .frame(minWidth: 900, minHeight: 600)
     }
 }
 
@@ -290,5 +40,131 @@ extension Color {
     ContentView()
         .environmentObject(VideoLibrary())
         .frame(width: 1100, height: 750)
+}
+
+// MARK: - Books-style chrome (floating sidebar under titlebar)
+
+private struct BooksChromeView: View {
+    @EnvironmentObject var library: VideoLibrary
+    @State private var isWindowFullScreen = false
+    @SceneStorage("sidebarVisible") private var sidebarVisible: Bool = true
+    
+    private let sidebarWidth: CGFloat = 220
+    private let outerInset: CGFloat = 10
+    // This controls how "inside" the traffic lights feel. Needs to be > 0 so the panel is inset,
+    // but small enough that lights still sit over the glass.
+    private let topInset: CGFloat = 10
+    private let gap: CGFloat = 12
+    private let cornerRadius: CGFloat = 12
+    
+    var body: some View {
+        ZStack(alignment: .topLeading) {
+            // Window background (edge-to-edge)
+            ZStack {
+                LinearGradient(
+                    colors: [Color(hex: "17171A"), Color(hex: "121214")],
+                    startPoint: .top,
+                    endPoint: .bottom
+                )
+                RadialGradient(
+                    colors: [
+                        Color.white.opacity(0.06),
+                        Color.clear
+                    ],
+                    center: .topLeading,
+                    startRadius: 40,
+                    endRadius: 520
+                )
+            }
+            .ignoresSafeArea()
+            
+            // Detail content laid out edge-to-edge, but shifted right to make room for the floating sidebar
+            LibraryDetailView()
+                .environmentObject(library)
+                .padding(.leading, leftInset)
+                // Keep right/bottom breathing room like Books, but DO NOT inset from the top
+                // (insetting the top makes a visible “top bar” appear).
+                .padding(.trailing, (isWindowFullScreen || library.isPlaying) ? 0 : outerInset)
+                .padding(.bottom, (isWindowFullScreen || library.isPlaying) ? 0 : outerInset)
+                .padding(.top, 0)
+                // The detail panel is the “dark gray interior”. Round its bottom corners so it matches
+                // the window’s rounded geometry instead of showing square corners.
+                .background { detailPanelShape.fill(detailPanelFill) }
+                .clipShape(detailPanelShape)
+                .overlay { detailPanelShape.strokeBorder(.white.opacity(library.isPlaying ? 0.0 : 0.05), lineWidth: 1) }
+            
+            // Floating sidebar panel (inset, concentric corners, under-titlebar)
+            if showSidebar {
+                SidebarView()
+                    .environmentObject(library)
+                    .frame(width: sidebarWidth)
+                    .background {
+                        ZStack {
+                            // Dark base so it doesn't feel "see-through" on dark windows
+                            RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
+                                .fill(Color(hex: "1D1D1F").opacity(0.65))
+                            // System Liquid Glass (wallpaper/theme-derived tint)
+                            GlassBackground(material: .sidebar, blendingMode: .withinWindow)
+                                .clipShape(RoundedRectangle(cornerRadius: cornerRadius, style: .continuous))
+                        }
+                    }
+                    .clipShape(RoundedRectangle(cornerRadius: cornerRadius, style: .continuous))
+                    // No explicit border: Books relies on shadow + glass edge contrast.
+                    .overlay {
+                        // Subtle inner highlight like system glass edges
+                        RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
+                            .strokeBorder(
+                                LinearGradient(
+                                    colors: [
+                                        .white.opacity(0.14),
+                                        .white.opacity(0.04)
+                                    ],
+                                    startPoint: .topLeading,
+                                    endPoint: .bottomTrailing
+                                ),
+                                lineWidth: 1
+                            )
+                    }
+                    .shadow(color: .black.opacity(0.45), radius: 28, x: 0, y: 14)
+                    .padding(.leading, outerInset)
+                    .padding(.bottom, outerInset)
+                    // Small top inset so the panel sits under the traffic lights visually
+                    .padding(.top, topInset)
+            }
+        }
+        // Ensure the floating sidebar can extend under the titlebar (traffic lights appear “inside”)
+        .ignoresSafeArea(.container, edges: .top)
+        // Track fullscreen to hide sidebar + remove insets
+        .overlay(WindowStateObserver(isFullScreen: $isWindowFullScreen).frame(width: 0, height: 0))
+        .onReceive(NotificationCenter.default.publisher(for: .toggleSidebar)) { _ in
+            withAnimation(.easeInOut(duration: 0.18)) {
+                sidebarVisible.toggle()
+            }
+        }
+    }
+    
+    private var showSidebar: Bool {
+        !isWindowFullScreen && sidebarVisible
+    }
+    
+    private var leftInset: CGFloat {
+        if isWindowFullScreen { return 0 }
+        return showSidebar ? (outerInset + sidebarWidth + gap) : outerInset
+    }
+    
+    private var detailPanelShape: UnevenRoundedRectangle {
+        // Keep top corners square (content reaches the titlebar), round the bottom corners.
+        UnevenRoundedRectangle(
+            topLeadingRadius: 0,
+            bottomLeadingRadius: cornerRadius,
+            bottomTrailingRadius: cornerRadius,
+            topTrailingRadius: 0
+        )
+    }
+    
+    private var detailPanelFill: Color {
+        // When playing, we want the player to feel edge-to-edge; fill with black.
+        library.isPlaying ? .black : Color(hex: "161618")
+    }
 }
 

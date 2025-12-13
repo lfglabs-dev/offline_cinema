@@ -35,6 +35,31 @@ struct VideoPlayerView: View {
                     .scaleEffect(1.5)
                     .tint(.white)
             }
+
+            // Error overlay (e.g., audio-only / unsupported video track)
+            if let message = playerController.playbackErrorMessage {
+                VStack(spacing: 10) {
+                    Image(systemName: "exclamationmark.triangle")
+                        .font(.system(size: 26, weight: .semibold))
+                        .foregroundColor(.white.opacity(0.9))
+                    Text(message)
+                        .font(.system(size: 13, weight: .medium))
+                        .foregroundColor(.white.opacity(0.9))
+                        .multilineTextAlignment(.center)
+                        .frame(maxWidth: 520)
+                }
+                .padding(20)
+                .background(
+                    RoundedRectangle(cornerRadius: 12, style: .continuous)
+                        .fill(.black.opacity(0.55))
+                        .overlay(
+                            RoundedRectangle(cornerRadius: 12, style: .continuous)
+                                .strokeBorder(.white.opacity(0.12), lineWidth: 1)
+                        )
+                )
+                .padding(.horizontal, 24)
+                .transition(.opacity)
+            }
             
             // Custom overlay controls
             if showControls {
@@ -92,6 +117,17 @@ struct VideoPlayerView: View {
                 closePlayer()
             } label: {
                 Image(systemName: "xmark")
+                    .font(.system(size: 14, weight: .semibold))
+                    .foregroundColor(.white)
+                    .frame(width: 32, height: 32)
+                    .background(Circle().fill(.white.opacity(0.2)))
+            }
+            .buttonStyle(.plain)
+            
+            Button {
+                NotificationCenter.default.post(name: .toggleSidebar, object: nil)
+            } label: {
+                Image(systemName: "sidebar.left")
                     .font(.system(size: 14, weight: .semibold))
                     .foregroundColor(.white)
                     .frame(width: 32, height: 32)
@@ -435,6 +471,7 @@ class PlayerController: ObservableObject {
     @Published var playbackSpeed: Float = 1.0
     @Published var isPiPActive = false
     @Published var isPiPSupported = false
+    @Published var playbackErrorMessage: String?
     
     @Published var subtitleOptions: [AVMediaSelectionOption]?
     @Published var audioOptions: [AVMediaSelectionOption]?
@@ -442,6 +479,7 @@ class PlayerController: ObservableObject {
     private var timeObserver: Any?
     private var pipController: AVPictureInPictureController?
     private var playerLayer: AVPlayerLayer?
+    private var statusObserver: NSKeyValueObservation?
     
     var currentTimeFormatted: String {
         formatTime(currentTime)
@@ -452,8 +490,38 @@ class PlayerController: ObservableObject {
     }
     
     func load(url: URL) {
-        let playerItem = AVPlayerItem(url: url)
+        playbackErrorMessage = nil
+        
+        let asset = AVURLAsset(url: url)
+        let playerItem = AVPlayerItem(asset: asset)
         player = AVPlayer(playerItem: playerItem)
+        
+        // Prevent external playback (AirPlay) from hijacking video rendering.
+        player?.allowsExternalPlayback = false
+        
+        // Observe status to surface errors like "audio plays but no video / can't decode".
+        statusObserver = playerItem.observe(\.status, options: [.initial, .new]) { [weak self] item, _ in
+            Task { @MainActor [weak self] in
+                guard let self else { return }
+                switch item.status {
+                case .failed:
+                    self.playbackErrorMessage = item.error?.localizedDescription ?? "Playback failed."
+                case .readyToPlay:
+                    // If the asset has no video tracks, explain clearly.
+                    do {
+                        let tracks = try await asset.loadTracks(withMediaType: .video)
+                        if tracks.isEmpty {
+                            self.playbackErrorMessage = "This file has no decodable video track (audio may still play). Try an MP4/MOV with H.264 or HEVC video."
+                        }
+                    } catch {
+                        // Ignore; if track loading fails, the player item will likely fail anyway.
+                        break
+                    }
+                default:
+                    break
+                }
+            }
+        }
         
         // Setup time observer
         timeObserver = player?.addPeriodicTimeObserver(
@@ -579,6 +647,8 @@ class PlayerController: ObservableObject {
         if let observer = timeObserver {
             player?.removeTimeObserver(observer)
         }
+        statusObserver?.invalidate()
+        statusObserver = nil
         player?.pause()
         player = nil
     }
@@ -607,6 +677,8 @@ struct VideoPlayerRepresentable: NSViewRepresentable {
         playerView.controlsStyle = .none // We use custom controls
         playerView.showsFullScreenToggleButton = false
         playerView.allowsPictureInPicturePlayback = true
+        playerView.videoGravity = .resizeAspect
+        playerView.focusRingType = .none // remove blue focus ring border
         return playerView
     }
     

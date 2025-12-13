@@ -12,12 +12,20 @@ struct SidebarView: View {
     @State private var isCreatingCollection = false
     @State private var newCollectionName = ""
     @State private var editingCollection: VideoCollection?
+    @State private var selectedTopDestination: TopDestination? = nil
+    
+    private let contentInsetX: CGFloat = 12
+    private let rowHPadding: CGFloat = 12
+    private let rowVPadding: CGFloat = 6
+    private let titlebarSpacerHeight: CGFloat = 52
     
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
-            // Top spacing for title bar area
-            Spacer()
-                .frame(height: 52)
+            // Titlebar space (traffic lights). Panel sits under the titlebar, so controls feel “inside”.
+            Spacer().frame(height: titlebarSpacerHeight)
+            
+            // Top destinations (Books-style)
+            topDestinations
             
             // Library section
             librarySection
@@ -27,9 +35,10 @@ struct SidebarView: View {
             
             Spacer()
             
-            // Stats footer
-            statsFooter
+            // User profile footer like Books
+            userProfileFooter
         }
+        .padding(.top, 6)
     }
     
     // MARK: - App Header
@@ -42,8 +51,8 @@ struct SidebarView: View {
     // MARK: - Library Section
     
     private var librarySection: some View {
-        VStack(alignment: .leading, spacing: 4) {
-            SidebarSectionHeader(title: "LIBRARY")
+        VStack(alignment: .leading, spacing: 1) {
+            SidebarSectionHeader(title: "Library")
             
             ForEach(LibraryFilter.allCases) { filter in
                 SidebarFilterButton(
@@ -57,18 +66,18 @@ struct SidebarView: View {
                 }
             }
         }
-        .padding(.horizontal, 12)
+        .padding(.horizontal, contentInsetX)
     }
     
     // MARK: - Collections Section
     
     private var collectionsSection: some View {
-        VStack(alignment: .leading, spacing: 4) {
+        VStack(alignment: .leading, spacing: 1) {
             HStack {
-                SidebarSectionHeader(title: "MY COLLECTIONS")
+                SidebarSectionHeader(title: "My Collections")
                 Spacer()
             }
-            .padding(.top, 20)
+            .padding(.top, 8)
             
             ForEach(library.collections) { collection in
                 SidebarCollectionButton(
@@ -94,24 +103,24 @@ struct SidebarView: View {
             Button {
                 isCreatingCollection = true
             } label: {
-                HStack(spacing: 10) {
+                HStack(spacing: 8) {
                     Image(systemName: "plus")
-                        .font(.system(size: 11, weight: .medium))
+                        .font(.system(size: 14))
                         .foregroundColor(.secondary)
                         .frame(width: 20)
                     
                     Text("New Collection")
-                        .font(.system(size: 12))
+                        .font(.system(size: 13))
                         .foregroundColor(.secondary)
                     
                     Spacer()
                 }
                 .padding(.horizontal, 10)
-                .padding(.vertical, 6)
+                .padding(.vertical, 5)
             }
             .buttonStyle(.plain)
         }
-        .padding(.horizontal, 12)
+        .padding(.horizontal, contentInsetX)
         .sheet(isPresented: $isCreatingCollection) {
             NewCollectionSheet(isPresented: $isCreatingCollection)
         }
@@ -123,31 +132,39 @@ struct SidebarView: View {
         }
     }
     
-    // MARK: - Stats Footer
+    // MARK: - User Profile Footer (like Books)
     
-    private var statsFooter: some View {
-        VStack(alignment: .leading, spacing: 8) {
-            Divider().padding(.horizontal, 4)
-            
-            let stats = library.libraryStats
-            
-            HStack(spacing: 8) {
-                Image(systemName: "film.stack.fill")
-                    .font(.system(size: 12))
-                    .foregroundColor(.secondary)
-                
-                VStack(alignment: .leading, spacing: 1) {
-                    Text("\(stats.total) videos")
-                        .font(.system(size: 11, weight: .medium))
-                        .foregroundColor(.primary.opacity(0.8))
-                    
-                    Text("\(stats.watching) watching • \(stats.finished) finished")
-                        .font(.system(size: 10))
-                        .foregroundColor(.secondary)
+    private var userProfileFooter: some View {
+        HStack(spacing: 10) {
+            // User avatar
+            Circle()
+                .fill(
+                    LinearGradient(
+                        colors: [Color(hex: "7C3AED"), Color(hex: "6366F1")],
+                        startPoint: .topLeading,
+                        endPoint: .bottomTrailing
+                    )
+                )
+                .frame(width: 28, height: 28)
+                .overlay {
+                    Text("T")
+                        .font(.system(size: 12, weight: .semibold))
+                        .foregroundColor(.white)
                 }
+            
+            VStack(alignment: .leading, spacing: 1) {
+                Text("Thomas")
+                    .font(.system(size: 12, weight: .medium))
+                    .foregroundColor(.primary)
+                
+                Text("Marchand")
+                    .font(.system(size: 11))
+                    .foregroundColor(.secondary)
             }
+            
+            Spacer()
         }
-        .padding(.horizontal, 16)
+        .padding(.horizontal, 14)
         .padding(.bottom, 16)
     }
     
@@ -176,6 +193,69 @@ struct SidebarView: View {
     }
 }
 
+// MARK: - Top Destinations (Books-style, simplified)
+
+private enum TopDestination: String, CaseIterable, Identifiable {
+    case search = "Search"
+    case home = "Home"
+    
+    var id: String { rawValue }
+    
+    var icon: String {
+        switch self {
+        case .search: return "magnifyingglass"
+        case .home: return "house"
+        }
+    }
+}
+
+private struct TopDestinationRow: View {
+    let destination: TopDestination
+    let isSelected: Bool
+    let action: () -> Void
+    @State private var hovered = false
+    
+    var body: some View {
+        Button(action: action) {
+            HStack(spacing: 10) {
+                Image(systemName: destination.icon)
+                    .font(.system(size: 15, weight: .regular))
+                    .foregroundColor(.primary.opacity(0.85))
+                    .frame(width: 22)
+                
+                Text(destination.rawValue)
+                    .font(.system(size: 13, weight: .medium))
+                    .foregroundColor(.primary.opacity(0.9))
+                
+                Spacer()
+            }
+            .padding(.horizontal, 12)
+            .padding(.vertical, 6)
+            .background {
+                RoundedRectangle(cornerRadius: 6, style: .continuous)
+                    .fill(isSelected ? .white.opacity(0.10) : (hovered ? .white.opacity(0.05) : .clear))
+            }
+        }
+        .buttonStyle(.plain)
+        .onHover { hovered = $0 }
+    }
+}
+
+private extension SidebarView {
+    var topDestinations: some View {
+        VStack(alignment: .leading, spacing: 2) {
+            ForEach(TopDestination.allCases) { dest in
+                TopDestinationRow(destination: dest, isSelected: selectedTopDestination == dest) {
+                    selectedTopDestination = dest
+                    library.selectedSidebar = .library(.all)
+                }
+            }
+        }
+        .padding(.horizontal, contentInsetX)
+        .padding(.bottom, 8)
+    }
+}
+
 // MARK: - Sidebar Section Header
 
 struct SidebarSectionHeader: View {
@@ -183,11 +263,13 @@ struct SidebarSectionHeader: View {
     
     var body: some View {
         Text(title)
-            .font(.system(size: 10, weight: .semibold))
+            .font(.system(size: 11, weight: .semibold))
             .foregroundColor(.secondary)
-            .tracking(0.5)
-            .padding(.horizontal, 8)
-            .padding(.vertical, 8)
+            .textCase(.uppercase)
+            .tracking(0.3)
+            .padding(.horizontal, 10)
+            .padding(.top, 10)
+            .padding(.bottom, 4)
     }
 }
 
@@ -203,34 +285,23 @@ struct SidebarFilterButton: View {
     
     var body: some View {
         Button(action: action) {
-            HStack(spacing: 10) {
-                Image(systemName: filter.icon)
-                    .font(.system(size: 13, weight: .medium))
-                    .foregroundColor(isSelected ? Color(hex: "DC2626") : .secondary)
+            HStack(spacing: 8) {
+                Image(systemName: filter.iconOutlined)
+                    .font(.system(size: 14))
+                    .foregroundColor(.secondary)
                     .frame(width: 20)
                 
                 Text(filter.rawValue)
-                    .font(.system(size: 13, weight: isSelected ? .semibold : .regular))
-                    .foregroundColor(isSelected ? .primary : .secondary)
+                    .font(.system(size: 13))
+                    .foregroundColor(.primary)
                 
                 Spacer()
-                
-                if count > 0 {
-                    Text("\(count)")
-                        .font(.system(size: 11, weight: .medium, design: .rounded))
-                        .foregroundColor(.secondary)
-                        .padding(.horizontal, 6)
-                        .padding(.vertical, 2)
-                        .background {
-                            Capsule().fill(.primary.opacity(0.06))
-                        }
-                }
             }
             .padding(.horizontal, 10)
-            .padding(.vertical, 8)
+            .padding(.vertical, 5)
             .background {
-                RoundedRectangle(cornerRadius: 8)
-                    .fill(isSelected ? Color(hex: "DC2626").opacity(0.12) : (isHovered ? .primary.opacity(0.05) : .clear))
+                RoundedRectangle(cornerRadius: 5, style: .continuous)
+                    .fill(isSelected ? .white.opacity(0.10) : (isHovered ? .white.opacity(0.05) : .clear))
             }
         }
         .buttonStyle(.plain)
@@ -249,30 +320,24 @@ struct SidebarCollectionButton: View {
     
     var body: some View {
         Button(action: action) {
-            HStack(spacing: 10) {
+            HStack(spacing: 8) {
                 Image(systemName: collection.icon)
-                    .font(.system(size: 12, weight: .medium))
-                    .foregroundColor(isSelected ? collection.accentColor : .secondary)
+                    .font(.system(size: 14))
+                    .foregroundColor(.secondary)
                     .frame(width: 20)
                 
                 Text(collection.name)
-                    .font(.system(size: 12, weight: isSelected ? .semibold : .regular))
-                    .foregroundColor(isSelected ? .primary : .secondary)
+                    .font(.system(size: 13))
+                    .foregroundColor(.primary)
                     .lineLimit(1)
                 
                 Spacer()
-                
-                if collection.videoCount > 0 {
-                    Text("\(collection.videoCount)")
-                        .font(.system(size: 10, weight: .medium, design: .rounded))
-                        .foregroundColor(.secondary)
-                }
             }
             .padding(.horizontal, 10)
-            .padding(.vertical, 6)
+            .padding(.vertical, 5)
             .background {
-                RoundedRectangle(cornerRadius: 6)
-                    .fill(isSelected ? collection.accentColor.opacity(0.12) : (isHovered ? .primary.opacity(0.05) : .clear))
+                RoundedRectangle(cornerRadius: 5, style: .continuous)
+                    .fill(isSelected ? .white.opacity(0.10) : (isHovered ? .white.opacity(0.05) : .clear))
             }
         }
         .buttonStyle(.plain)
