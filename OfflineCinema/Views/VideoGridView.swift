@@ -13,7 +13,7 @@ struct VideoGridView: View {
     @State private var showFilePicker = false
     
     private let columns = [
-        GridItem(.adaptive(minimum: 180, maximum: 220), spacing: 20)
+        GridItem(.adaptive(minimum: 180, maximum: 220), spacing: 28)
     ]
     
     var body: some View {
@@ -57,7 +57,7 @@ struct VideoGridView: View {
                 if videos.isEmpty {
                     emptyStateInline
                 } else {
-                    LazyVGrid(columns: columns, spacing: 24) {
+                    LazyVGrid(columns: columns, spacing: 32) {
                         ForEach(videos) { video in
                             VideoThumbnailCard(video: video)
                                 .onTapGesture {

@@ -37,6 +37,8 @@
             </array>
         </dict>
     </array>
+    <key>NSContactsUsageDescription</key>
+    <string>Offline Cinema uses your contacts to display your profile picture.</string>
     <key>UTImportedTypeDeclarations</key>
     <array>
         <dict>

@@ -6,6 +6,111 @@
 //
 
 import SwiftUI
+import AppKit
+import Contacts
+
+// MARK: - macOS User Avatar
+
+struct UserAvatarView: View {
+    @State private var userImage: NSImage?
+    
+    var body: some View {
+        Group {
+            if let image = userImage {
+                Image(nsImage: image)
+                    .resizable()
+                    .scaledToFill()
+            } else {
+                // Fallback gradient avatar with user initial
+                Circle()
+                    .fill(
+                        LinearGradient(
+                            colors: [Color(hex: "6B7280"), Color(hex: "4B5563")],
+                            startPoint: .topLeading,
+                            endPoint: .bottomTrailing
+                        )
+                    )
+                    .overlay {
+                        Text(String(NSFullUserName().prefix(1)).uppercased())
+                            .font(.system(size: 15, weight: .semibold))
+                            .foregroundColor(.white)
+                    }
+            }
+        }
+        .onAppear {
+            loadUserImage()
+        }
+    }
+    
+    private func loadUserImage() {
+        // Try to load Apple ID / iCloud avatar from known cache locations
+        let homeDir = FileManager.default.homeDirectoryForCurrentUser.path
+        
+        let possiblePaths = [
+            // Apple ID avatar cache (most likely location for iCloud avatar)
+            "\(homeDir)/Library/Caches/com.apple.iCloudHelper/\(NSUserName())",
+            "\(homeDir)/Library/Caches/com.apple.akd/\(NSUserName()).png",
+            // Account picture locations
+            "\(homeDir)/Library/Application Support/com.apple.TCC/UserPicture.tiff",
+            "\(homeDir)/Library/Caches/AccountPictures/\(NSUserName()).heic",
+            "\(homeDir)/Library/Caches/AccountPictures/\(NSUserName()).png",
+            // System Preferences user picture
+            "/Library/Caches/com.apple.iconservices.store/\(NSUserName())",
+            // Legacy face icon
+            "\(homeDir)/.face.icon",
+            "\(homeDir)/.face"
+        ]
+        
+        for path in possiblePaths {
+            if let image = NSImage(contentsOfFile: path) {
+                userImage = image
+                return
+            }
+        }
+        
+        // Try to get from Contacts (the user's own card)
+        loadFromContacts()
+    }
+    
+    private func loadFromContacts() {
+        let store = CNContactStore()
+        
+        // Check authorization status
+        let authStatus = CNContactStore.authorizationStatus(for: .contacts)
+        guard authStatus == .authorized else {
+            // Request access if not determined
+            if authStatus == .notDetermined {
+                store.requestAccess(for: .contacts) { granted, _ in
+                    if granted {
+                        DispatchQueue.main.async {
+                            self.fetchMeCard(from: store)
+                        }
+                    }
+                }
+            }
+            return
+        }
+        
+        fetchMeCard(from: store)
+    }
+    
+    private func fetchMeCard(from store: CNContactStore) {
+        // Try to fetch the user's "Me" card
+        let keysToFetch: [CNKeyDescriptor] = [
+            CNContactImageDataKey as CNKeyDescriptor,
+            CNContactThumbnailImageDataKey as CNKeyDescriptor
+        ]
+        
+        // First try to get "me" identifier
+        if let meIdentifier = try? store.unifiedMeContactWithKeys(toFetch: keysToFetch),
+           let imageData = meIdentifier.imageData ?? meIdentifier.thumbnailImageData,
+           let image = NSImage(data: imageData) {
+            DispatchQueue.main.async {
+                self.userImage = image
+            }
+        }
+    }
+}
 
 struct SidebarView: View {
     @EnvironmentObject var library: VideoLibrary
@@ -103,20 +208,20 @@ struct SidebarView: View {
             Button {
                 isCreatingCollection = true
             } label: {
-                HStack(spacing: 8) {
+                HStack(spacing: 10) {
                     Image(systemName: "plus")
-                        .font(.system(size: 14))
-                        .foregroundColor(.secondary)
-                        .frame(width: 20)
+                        .font(.system(size: 16))
+                        .foregroundColor(.primary.opacity(0.6))
+                        .frame(width: 22)
                     
                     Text("New Collection")
                         .font(.system(size: 13))
-                        .foregroundColor(.secondary)
+                        .foregroundColor(.primary.opacity(0.6))
                     
                     Spacer()
                 }
                 .padding(.horizontal, 10)
-                .padding(.vertical, 5)
+                .padding(.vertical, 7)
             }
             .buttonStyle(.plain)
         }
@@ -135,37 +240,23 @@ struct SidebarView: View {
     // MARK: - User Profile Footer (like Books)
     
     private var userProfileFooter: some View {
-        HStack(spacing: 10) {
-            // User avatar
-            Circle()
-                .fill(
-                    LinearGradient(
-                        colors: [Color(hex: "7C3AED"), Color(hex: "6366F1")],
-                        startPoint: .topLeading,
-                        endPoint: .bottomTrailing
-                    )
-                )
-                .frame(width: 28, height: 28)
-                .overlay {
-                    Text("T")
-                        .font(.system(size: 12, weight: .semibold))
-                        .foregroundColor(.white)
-                }
+        HStack(spacing: 12) {
+            // macOS user avatar
+            UserAvatarView()
+                .frame(width: 34, height: 34)
+                .clipShape(Circle())
             
-            VStack(alignment: .leading, spacing: 1) {
-                Text("Thomas")
-                    .font(.system(size: 12, weight: .medium))
+            VStack(alignment: .leading, spacing: 2) {
+                Text(NSFullUserName())
+                    .font(.system(size: 14, weight: .medium))
                     .foregroundColor(.primary)
-                
-                Text("Marchand")
-                    .font(.system(size: 11))
-                    .foregroundColor(.secondary)
+                    .lineLimit(1)
             }
             
             Spacer()
         }
         .padding(.horizontal, 14)
-        .padding(.bottom, 16)
+        .padding(.bottom, 18)
     }
     
     // MARK: - Helpers
@@ -219,21 +310,21 @@ private struct TopDestinationRow: View {
         Button(action: action) {
             HStack(spacing: 10) {
                 Image(systemName: destination.icon)
-                    .font(.system(size: 15, weight: .regular))
-                    .foregroundColor(.primary.opacity(0.85))
+                    .font(.system(size: 16, weight: .regular))
+                    .foregroundColor(.primary)
                     .frame(width: 22)
                 
                 Text(destination.rawValue)
-                    .font(.system(size: 13, weight: .medium))
-                    .foregroundColor(.primary.opacity(0.9))
+                    .font(.system(size: 13, weight: .regular))
+                    .foregroundColor(.primary)
                 
                 Spacer()
             }
-            .padding(.horizontal, 12)
-            .padding(.vertical, 6)
+            .padding(.horizontal, 10)
+            .padding(.vertical, 7)
             .background {
                 RoundedRectangle(cornerRadius: 6, style: .continuous)
-                    .fill(isSelected ? .white.opacity(0.10) : (hovered ? .white.opacity(0.05) : .clear))
+                    .fill(isSelected ? .white.opacity(0.12) : (hovered ? .white.opacity(0.06) : .clear))
             }
         }
         .buttonStyle(.plain)
@@ -252,7 +343,7 @@ private extension SidebarView {
             }
         }
         .padding(.horizontal, contentInsetX)
-        .padding(.bottom, 8)
+        .padding(.bottom, 4)
     }
 }
 
@@ -263,13 +354,11 @@ struct SidebarSectionHeader: View {
     
     var body: some View {
         Text(title)
-            .font(.system(size: 11, weight: .semibold))
-            .foregroundColor(.secondary)
-            .textCase(.uppercase)
-            .tracking(0.3)
+            .font(.system(size: 13, weight: .semibold))
+            .foregroundColor(.white)
             .padding(.horizontal, 10)
-            .padding(.top, 10)
-            .padding(.bottom, 4)
+            .padding(.top, 14)
+            .padding(.bottom, 6)
     }
 }
 
@@ -285,11 +374,11 @@ struct SidebarFilterButton: View {
     
     var body: some View {
         Button(action: action) {
-            HStack(spacing: 8) {
+            HStack(spacing: 10) {
                 Image(systemName: filter.iconOutlined)
-                    .font(.system(size: 14))
-                    .foregroundColor(.secondary)
-                    .frame(width: 20)
+                    .font(.system(size: 16))
+                    .foregroundColor(.primary.opacity(0.85))
+                    .frame(width: 22)
                 
                 Text(filter.rawValue)
                     .font(.system(size: 13))
@@ -298,10 +387,10 @@ struct SidebarFilterButton: View {
                 Spacer()
             }
             .padding(.horizontal, 10)
-            .padding(.vertical, 5)
+            .padding(.vertical, 7)
             .background {
-                RoundedRectangle(cornerRadius: 5, style: .continuous)
-                    .fill(isSelected ? .white.opacity(0.10) : (isHovered ? .white.opacity(0.05) : .clear))
+                RoundedRectangle(cornerRadius: 6, style: .continuous)
+                    .fill(isSelected ? .white.opacity(0.12) : (isHovered ? .white.opacity(0.06) : .clear))
             }
         }
         .buttonStyle(.plain)
@@ -320,11 +409,11 @@ struct SidebarCollectionButton: View {
     
     var body: some View {
         Button(action: action) {
-            HStack(spacing: 8) {
+            HStack(spacing: 10) {
                 Image(systemName: collection.icon)
-                    .font(.system(size: 14))
-                    .foregroundColor(.secondary)
-                    .frame(width: 20)
+                    .font(.system(size: 16))
+                    .foregroundColor(.primary.opacity(0.85))
+                    .frame(width: 22)
                 
                 Text(collection.name)
                     .font(.system(size: 13))
@@ -334,10 +423,10 @@ struct SidebarCollectionButton: View {
                 Spacer()
             }
             .padding(.horizontal, 10)
-            .padding(.vertical, 5)
+            .padding(.vertical, 7)
             .background {
-                RoundedRectangle(cornerRadius: 5, style: .continuous)
-                    .fill(isSelected ? .white.opacity(0.10) : (isHovered ? .white.opacity(0.05) : .clear))
+                RoundedRectangle(cornerRadius: 6, style: .continuous)
+                    .fill(isSelected ? .white.opacity(0.12) : (isHovered ? .white.opacity(0.06) : .clear))
             }
         }
         .buttonStyle(.plain)
