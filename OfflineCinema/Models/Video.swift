@@ -152,6 +152,14 @@ struct Video: Identifiable, Codable, Hashable {
             return false // Not stale or can't resolve
         }
         
+        // Must start security-scoped access before creating a new bookmark
+        let didStartAccess = url.startAccessingSecurityScopedResource()
+        defer {
+            if didStartAccess {
+                url.stopAccessingSecurityScopedResource()
+            }
+        }
+        
         // Try to create a fresh bookmark
         if let newBookmark = try? url.bookmarkData(
             options: .withSecurityScope,

@@ -147,8 +147,19 @@ struct LibraryDetailView: View {
     }
 
     private var supportedVideoTypes: [UTType] {
-        // Keep this intentionally narrow: these are the formats macOS AVFoundation reliably decodes.
-        [.mpeg4Movie, .quickTimeMovie]
+        // All video formats advertised in Info.plist and README
+        [
+            .mpeg4Movie,           // .mp4, .m4v
+            .quickTimeMovie,       // .mov
+            .avi,                  // .avi
+            .movie,                // Generic movie type
+            UTType("org.matroska.mkv") ?? .movie,     // .mkv (custom UTI in Info.plist)
+            UTType("org.webmproject.webm") ?? .movie, // .webm
+            UTType("com.microsoft.windows-media-wmv") ?? .movie, // .wmv
+            UTType("video.flv") ?? .movie,            // .flv
+            UTType("public.3gpp") ?? .movie,          // .3gp
+            UTType("public.ogg-video") ?? .movie      // .ogv
+        ].compactMap { $0 }
     }
 
     private func handleDrop(providers: [NSItemProvider]) -> Bool {
@@ -160,8 +171,17 @@ struct LibraryDetailView: View {
                     guard let data = item as? Data,
                           let url = URL(dataRepresentation: data, relativeTo: nil) else { return }
 
-                    // Keep this intentionally narrow: same as supported file importer.
-                    let videoExtensions = ["mp4", "mov", "m4v"]
+                    // All video formats advertised in Info.plist and README
+                    let videoExtensions = [
+                        "mp4", "mov", "m4v",  // Apple/MPEG-4
+                        "avi",                 // AVI
+                        "mkv",                 // Matroska
+                        "webm",                // WebM
+                        "wmv",                 // Windows Media
+                        "flv",                 // Flash Video
+                        "3gp", "3gpp",         // 3GPP
+                        "ogv", "ogg"           // Ogg Video
+                    ]
                     let ext = url.pathExtension.lowercased()
 
                     if videoExtensions.contains(ext) {

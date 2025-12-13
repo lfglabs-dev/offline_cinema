@@ -6,6 +6,7 @@
 //
 
 import SwiftUI
+import UniformTypeIdentifiers
 
 struct VideoGridView: View {
     @EnvironmentObject var library: VideoLibrary
@@ -15,6 +16,22 @@ struct VideoGridView: View {
     private let columns = [
         GridItem(.adaptive(minimum: 180, maximum: 220), spacing: 28)
     ]
+    
+    private var supportedVideoTypes: [UTType] {
+        // All video formats advertised in Info.plist and README
+        [
+            .mpeg4Movie,           // .mp4, .m4v
+            .quickTimeMovie,       // .mov
+            .avi,                  // .avi
+            .movie,                // Generic movie type
+            UTType("org.matroska.mkv") ?? .movie,     // .mkv
+            UTType("org.webmproject.webm") ?? .movie, // .webm
+            UTType("com.microsoft.windows-media-wmv") ?? .movie, // .wmv
+            UTType("video.flv") ?? .movie,            // .flv
+            UTType("public.3gpp") ?? .movie,          // .3gp
+            UTType("public.ogg-video") ?? .movie      // .ogv
+        ].compactMap { $0 }
+    }
     
     var body: some View {
         ScrollView {
@@ -73,7 +90,7 @@ struct VideoGridView: View {
         }
         .fileImporter(
             isPresented: $showFilePicker,
-            allowedContentTypes: [.mpeg4Movie, .quickTimeMovie],
+            allowedContentTypes: supportedVideoTypes,
             allowsMultipleSelection: true
         ) { result in
             if case .success(let urls) = result {
