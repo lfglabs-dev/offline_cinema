@@ -124,27 +124,40 @@ final class TrafficLightsPositioner {
         
         let center = NotificationCenter.default
         let tokens: [NSObjectProtocol] = [
-            center.addObserver(forName: NSWindow.didResizeNotification, object: window, queue: .main) { [weak self] _ in
-                Task { @MainActor [weak self] in
-                    guard let self else { return }
+            center.addObserver(forName: NSWindow.didResizeNotification, object: window, queue: .main) { [weak self, weak window] _ in
+                Task { @MainActor [weak self, weak window] in
+                    guard let self, let window else { return }
                     self.apply(to: window)
                 }
             },
-            center.addObserver(forName: NSWindow.didMoveNotification, object: window, queue: .main) { [weak self] _ in
-                Task { @MainActor [weak self] in
-                    guard let self else { return }
+            center.addObserver(forName: NSWindow.didMoveNotification, object: window, queue: .main) { [weak self, weak window] _ in
+                Task { @MainActor [weak self, weak window] in
+                    guard let self, let window else { return }
                     self.apply(to: window)
                 }
             },
-            center.addObserver(forName: NSWindow.didEndLiveResizeNotification, object: window, queue: .main) { [weak self] _ in
-                Task { @MainActor [weak self] in
-                    guard let self else { return }
+            center.addObserver(forName: NSWindow.didEndLiveResizeNotification, object: window, queue: .main) { [weak self, weak window] _ in
+                Task { @MainActor [weak self, weak window] in
+                    guard let self, let window else { return }
                     self.apply(to: window)
                 }
             }
         ]
         
         observers[id] = tokens
+        
+        // Also observe window close to clean up observers
+        center.addObserver(forName: NSWindow.willCloseNotification, object: window, queue: .main) { [weak self] notification in
+            guard let closingWindow = notification.object as? NSWindow else { return }
+            let closingId = ObjectIdentifier(closingWindow)
+            Task { @MainActor [weak self] in
+                guard let self else { return }
+                if let tokens = self.observers[closingId] {
+                    tokens.forEach { NotificationCenter.default.removeObserver($0) }
+                    self.observers.removeValue(forKey: closingId)
+                }
+            }
+        }
     }
     
     private func apply(to window: NSWindow) {

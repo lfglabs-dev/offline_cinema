@@ -15,7 +15,8 @@ struct VideoPlayerView: View {
     
     @StateObject private var playerController = PlayerController()
     @State private var showControls = true
-    @State private var controlsTimer: Timer?
+    @State private var controlsTimerActive = false
+    @State private var securityScopedURL: URL? // Track URL for security-scoped access cleanup
     @Environment(\.dismiss) private var dismiss
     
     var body: some View {
@@ -73,6 +74,7 @@ struct VideoPlayerView: View {
         .onDisappear {
             saveProgress()
             playerController.cleanup()
+            cleanupSecurityAccess()
         }
         .onReceive(NotificationCenter.default.publisher(for: NSApplication.willTerminateNotification)) { _ in
             saveProgress()
@@ -370,13 +372,15 @@ struct VideoPlayerView: View {
     private func setupPlayer() {
         guard let url = video.resolvedURL else { return }
         
-        // Start security-scoped access
-        _ = url.startAccessingSecurityScopedResource()
+        // Start security-scoped access and store URL for cleanup
+        if url.startAccessingSecurityScopedResource() {
+            securityScopedURL = url
+        }
         
         playerController.load(url: url)
         
-        // Resume from last position if available
-        if let progress = video.watchProgress, progress.position > 0 {
+        // Resume from last position if available (guard against division by zero)
+        if let progress = video.watchProgress, progress.position > 0, video.duration > 0 {
             let resumePosition = progress.position / video.duration
             if resumePosition < 0.95 { // Don't resume if almost finished
                 playerController.seek(to: resumePosition)
@@ -385,6 +389,13 @@ struct VideoPlayerView: View {
         
         playerController.play()
         startControlsTimer()
+    }
+    
+    private func cleanupSecurityAccess() {
+        if let url = securityScopedURL {
+            url.stopAccessingSecurityScopedResource()
+            securityScopedURL = nil
+        }
     }
     
     private func closePlayer() {
@@ -402,6 +413,7 @@ struct VideoPlayerView: View {
     }
     
     private func toggleControls() {
+        cancelControlsTimer()
         withAnimation(.easeInOut(duration: 0.2)) {
             showControls.toggle()
         }
@@ -411,16 +423,22 @@ struct VideoPlayerView: View {
     }
     
     private func startControlsTimer() {
-        controlsTimer?.invalidate()
-        controlsTimer = Timer.scheduledTimer(withTimeInterval: 3.0, repeats: false) { [weak playerController] _ in
-            Task { @MainActor in
-                if playerController?.isPlaying == true {
-                    withAnimation(.easeInOut(duration: 0.2)) {
-                        self.showControls = false
-                    }
-                }
+        controlsTimerActive = true
+        
+        Task { @MainActor in
+            try? await Task.sleep(for: .seconds(3))
+            
+            // Only hide if timer is still active and playing
+            guard controlsTimerActive, playerController.isPlaying else { return }
+            
+            withAnimation(.easeInOut(duration: 0.2)) {
+                showControls = false
             }
         }
+    }
+    
+    private func cancelControlsTimer() {
+        controlsTimerActive = false
     }
     
     private func toggleFullscreen() {
