@@ -41,7 +41,8 @@ struct Video: Identifiable, Codable, Hashable {
     var resolution: VideoResolution?
     
     // Non-persisted URL resolved from bookmark
-    var resolvedURL: URL? {
+    // Returns (url, isStale) tuple - stale bookmarks are still valid for the current session
+    var resolvedURLWithStaleFlag: (url: URL, isStale: Bool)? {
         guard let bookmarkData = urlBookmarkData else { return nil }
         var isStale = false
         do {
@@ -51,14 +52,22 @@ struct Video: Identifiable, Codable, Hashable {
                 relativeTo: nil,
                 bookmarkDataIsStale: &isStale
             )
-            if isStale {
-                // Bookmark is stale, would need to be refreshed
-                return nil
-            }
-            return url
+            // Per Apple docs: stale bookmarks still return a usable URL for the current session
+            // The staleness flag just indicates the bookmark data should be refreshed
+            return (url, isStale)
         } catch {
             return nil
         }
+    }
+    
+    // Convenience property for most use cases (playback, Finder reveal, etc.)
+    var resolvedURL: URL? {
+        resolvedURLWithStaleFlag?.url
+    }
+    
+    // Check if bookmark needs refresh
+    var needsBookmarkRefresh: Bool {
+        resolvedURLWithStaleFlag?.isStale ?? false
     }
     
     // Computed properties
@@ -135,6 +144,26 @@ struct Video: Identifiable, Codable, Hashable {
         }
     }
     
+    // MARK: - Bookmark Management
+    
+    /// Refresh the bookmark if it's stale. Returns true if refresh was successful.
+    mutating func refreshBookmarkIfNeeded() -> Bool {
+        guard let (url, isStale) = resolvedURLWithStaleFlag, isStale else {
+            return false // Not stale or can't resolve
+        }
+        
+        // Try to create a fresh bookmark
+        if let newBookmark = try? url.bookmarkData(
+            options: .withSecurityScope,
+            includingResourceValuesForKeys: nil,
+            relativeTo: nil
+        ) {
+            urlBookmarkData = newBookmark
+            return true
+        }
+        return false
+    }
+    
     // MARK: - Hashable
     
     func hash(into hasher: inout Hasher) {
@@ -173,4 +202,5 @@ struct VideoResolution: Codable, Hashable {
         return CGFloat(width) / CGFloat(height)
     }
 }
+
 

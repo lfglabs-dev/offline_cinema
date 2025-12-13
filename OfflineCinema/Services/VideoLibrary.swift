@@ -130,8 +130,28 @@ class VideoLibrary: ObservableObject {
             
             videos = try await loadedVideos
             collections = try await loadedCollections
+            
+            // Refresh any stale bookmarks in the background
+            await refreshStaleBookmarks()
         } catch {
             print("Failed to load library: \(error)")
+        }
+    }
+    
+    /// Refresh any stale bookmarks and save if any were updated
+    private func refreshStaleBookmarks() async {
+        var needsSave = false
+        
+        for index in videos.indices {
+            if videos[index].needsBookmarkRefresh {
+                if videos[index].refreshBookmarkIfNeeded() {
+                    needsSave = true
+                }
+            }
+        }
+        
+        if needsSave {
+            await saveLibrary()
         }
     }
     
@@ -147,8 +167,12 @@ class VideoLibrary: ObservableObject {
     // MARK: - Video Management
     
     func importVideo(from url: URL) async {
-        // Check if video already exists
-        if videos.contains(where: { $0.resolvedURL == url }) {
+        // Check if video already exists (compare by path to handle stale bookmarks)
+        let importPath = url.standardizedFileURL.path
+        if videos.contains(where: { video in
+            guard let existingURL = video.resolvedURL else { return false }
+            return existingURL.standardizedFileURL.path == importPath
+        }) {
             return
         }
         

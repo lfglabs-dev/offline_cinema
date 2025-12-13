@@ -123,7 +123,7 @@ final class TrafficLightsPositioner {
         }
         
         let center = NotificationCenter.default
-        let tokens: [NSObjectProtocol] = [
+        var tokens: [NSObjectProtocol] = [
             center.addObserver(forName: NSWindow.didResizeNotification, object: window, queue: .main) { [weak self, weak window] _ in
                 Task { @MainActor [weak self, weak window] in
                     guard let self, let window else { return }
@@ -144,10 +144,8 @@ final class TrafficLightsPositioner {
             }
         ]
         
-        observers[id] = tokens
-        
-        // Also observe window close to clean up observers
-        center.addObserver(forName: NSWindow.willCloseNotification, object: window, queue: .main) { [weak self] notification in
+        // Also observe window close to clean up all observers (including itself)
+        let closeObserver = center.addObserver(forName: NSWindow.willCloseNotification, object: window, queue: .main) { [weak self] notification in
             guard let closingWindow = notification.object as? NSWindow else { return }
             let closingId = ObjectIdentifier(closingWindow)
             Task { @MainActor [weak self] in
@@ -158,6 +156,9 @@ final class TrafficLightsPositioner {
                 }
             }
         }
+        tokens.append(closeObserver)
+        
+        observers[id] = tokens
     }
     
     private func apply(to window: NSWindow) {

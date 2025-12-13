@@ -15,7 +15,7 @@ struct VideoPlayerView: View {
     
     @StateObject private var playerController = PlayerController()
     @State private var showControls = true
-    @State private var controlsTimerActive = false
+    @State private var controlsTimerID: UUID? = nil
     @State private var securityScopedURL: URL? // Track URL for security-scoped access cleanup
     @Environment(\.dismiss) private var dismiss
     
@@ -424,13 +424,15 @@ struct VideoPlayerView: View {
     }
     
     private func startControlsTimer() {
-        controlsTimerActive = true
+        // Create a unique ID for this timer instance to prevent race conditions
+        let timerID = UUID()
+        controlsTimerID = timerID
         
         Task { @MainActor in
             try? await Task.sleep(for: .seconds(3))
             
-            // Only hide if timer is still active and playing
-            guard controlsTimerActive, playerController.isPlaying else { return }
+            // Only hide if THIS timer is still the active one and video is playing
+            guard controlsTimerID == timerID, playerController.isPlaying else { return }
             
             withAnimation(.easeInOut(duration: 0.2)) {
                 showControls = false
@@ -439,7 +441,7 @@ struct VideoPlayerView: View {
     }
     
     private func cancelControlsTimer() {
-        controlsTimerActive = false
+        controlsTimerID = nil
     }
     
     private func toggleFullscreen() {
