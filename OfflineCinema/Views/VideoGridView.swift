@@ -8,14 +8,37 @@
 import SwiftUI
 import UniformTypeIdentifiers
 
+// Preference key to track container width
+private struct ContainerWidthKey: PreferenceKey {
+    static var defaultValue: CGFloat = 0
+    static func reduce(value: inout CGFloat, nextValue: () -> CGFloat) {
+        value = nextValue()
+    }
+}
+
 struct VideoGridView: View {
     @EnvironmentObject var library: VideoLibrary
     let videos: [Video]
     @State private var showFilePicker = false
+    @State private var containerWidth: CGFloat = 600
     
-    private let columns = [
-        GridItem(.adaptive(minimum: 180, maximum: 220), spacing: 28)
-    ]
+    // Grid constants - CSS flex-like behavior
+    private let itemMinWidth: CGFloat = 180
+    private let itemMaxWidth: CGFloat = 280
+    private let horizontalSpacing: CGFloat = 24
+    private let verticalSpacing: CGFloat = 32
+    private let horizontalPadding: CGFloat = 24
+    
+    private var columns: [GridItem] {
+        let availableWidth = containerWidth - (horizontalPadding * 2)
+        guard availableWidth > 0 else {
+            return [GridItem(.flexible(), spacing: horizontalSpacing)]
+        }
+        // Calculate how many items fit with minimum width + spacing
+        let columnCount = max(1, Int((availableWidth + horizontalSpacing) / (itemMinWidth + horizontalSpacing)))
+        // Use flexible items with fixed spacing to maintain gaps
+        return Array(repeating: GridItem(.flexible(minimum: itemMinWidth, maximum: itemMaxWidth), spacing: horizontalSpacing), count: columnCount)
+    }
     
     private var supportedVideoTypes: [UTType] {
         // All video formats advertised in Info.plist and README
@@ -36,6 +59,15 @@ struct VideoGridView: View {
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 0) {
+                // Width tracker - captures actual available width
+                Color.clear
+                    .frame(height: 0)
+                    .background(
+                        GeometryReader { geo in
+                            Color.clear.preference(key: ContainerWidthKey.self, value: geo.size.width)
+                        }
+                    )
+                
                 // Title header like Books app
                 HStack(alignment: .center) {
                     Text(library.currentFilterTitle)
@@ -74,7 +106,7 @@ struct VideoGridView: View {
                 if videos.isEmpty {
                     emptyStateInline
                 } else {
-                    LazyVGrid(columns: columns, spacing: 32) {
+                    LazyVGrid(columns: columns, spacing: verticalSpacing) {
                         ForEach(videos) { video in
                             VideoThumbnailCard(video: video)
                                 .onTapGesture {
@@ -83,9 +115,14 @@ struct VideoGridView: View {
                                 }
                         }
                     }
-                    .padding(.horizontal, 24)
+                    .padding(.horizontal, horizontalPadding)
                     .padding(.bottom, 24)
                 }
+            }
+        }
+        .onPreferenceChange(ContainerWidthKey.self) { width in
+            if width > 0 {
+                containerWidth = width
             }
         }
         .fileImporter(
