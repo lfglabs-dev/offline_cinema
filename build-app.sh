@@ -26,9 +26,13 @@ mkdir -p "$RESOURCES_DIR"
 # Copy executable
 cp "$BUILD_DIR/$APP_NAME" "$MACOS_DIR/"
 
-# Create a simple app icon (red play button)
-# In production, you'd use proper icon assets
-echo "🎨 Creating app icon..."
+# Copy app icon
+echo "🎨 Copying app icon..."
+if [ -f "branding/AppIcon.icns" ]; then
+    cp "branding/AppIcon.icns" "$RESOURCES_DIR/"
+else
+    echo "⚠️  No AppIcon.icns found. Run 'python3 generate-icons.py' to generate icons."
+fi
 
 # Create Info.plist
 cat > "$CONTENTS_DIR/Info.plist" << EOF

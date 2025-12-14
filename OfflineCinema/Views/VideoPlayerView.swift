@@ -649,7 +649,15 @@ class PlayerController: ObservableObject {
     }
     
     func skip(seconds: Double) {
-        let newTime = max(0, min(duration, currentTime + seconds))
+        let newTime: Double
+        if duration > 0 {
+            // Duration loaded - clamp to valid range
+            newTime = max(0, min(duration, currentTime + seconds))
+        } else {
+            // Duration not yet loaded - only prevent negative time
+            newTime = max(0, currentTime + seconds)
+        }
+        
         let targetTime = CMTime(seconds: newTime, preferredTimescale: 600)
         player?.seek(to: targetTime, toleranceBefore: .zero, toleranceAfter: .zero)
         
