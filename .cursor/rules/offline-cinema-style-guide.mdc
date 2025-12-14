@@ -1,0 +1,333 @@
+---
+description: Offline Cinema design philosophy, patterns, and macOS native app best practices
+globs: ["**/*.swift", "**/Info.plist", "**/*.entitlements"]
+alwaysApply: true
+---
+
+# Offline Cinema Style Guide
+
+## Design Philosophy
+
+Offline Cinema is a **native macOS video player** designed to feel like a first-party Apple application. The primary inspiration is the **Books app** on macOS Sequoia/Tahoe, with its elegant floating glass sidebar, clean typography, and seamless integration with the system's visual language.
+
+### Core Principles
+
+1. **Native First** — Use system APIs, materials, and behaviors. Avoid custom implementations when Apple provides native solutions.
+
+2. **Liquid Glass Aesthetic** — Embrace macOS's "Liquid Glass" design language with translucent materials that sample the desktop wallpaper and adapt to light/dark mode.
+
+3. **Minimalism with Purpose** — Show only what's necessary. Hide controls during playback, reveal them on interaction.
+
+4. **Seamless Integration** — Support system features: drag-and-drop, Finder integration, keyboard shortcuts, fullscreen, Picture-in-Picture.
+
+5. **Performance** — Video playback must be smooth. Optimize rendering, minimize CPU usage, leverage hardware acceleration.
+
+---
+
+## Visual Design
+
+### Color Palette
+
+```swift
+// Window background (deep charcoal gradient)
+LinearGradient(colors: [Color(hex: "17171A"), Color(hex: "121214")], ...)
+
+// Detail panel (slightly lighter for depth)
+Color(hex: "161618")
+
+// Sidebar glass base (semi-transparent)
+Color(hex: "1D1D1F").opacity(0.65)
+
+// Text: primary = .primary, secondary = .primary.opacity(0.6-0.85)
+// Accent: system accent color (respects user preference)
+```
+
+### Typography
+
+- **Section headers**: 13pt semibold, white
+- **List items**: 13pt regular, primary
+- **Icons**: SF Symbols, 16pt
+- **Page titles**: 32pt bold serif (like Books)
+- **Video titles**: 13pt medium
+
+### Spacing & Layout
+
+| Element | Value |
+|---------|-------|
+| Outer inset (sidebar from window edge) | 10pt |
+| Sidebar width | 220pt |
+| Gap between sidebar and content | 12pt (0 during playback) |
+| Corner radius (sidebar, panels) | 12pt |
+| Titlebar spacer (traffic lights clearance) | 52pt |
+| Grid spacing (horizontal) | 28pt |
+| Grid spacing (vertical) | 32pt |
+
+---
+
+## Floating Glass Sidebar
+
+The sidebar is a **floating translucent panel** that sits inside the window bounds, under the titlebar, with concentric rounded corners.
+
+### Implementation
+
+```swift
+// Window configuration (AppDelegate)
+window.titlebarAppearsTransparent = true
+window.titleVisibility = .hidden
+window.toolbar = nil  // Critical: prevents glassy titlebar
+window.styleMask = [.titled, .closable, .miniaturizable, .resizable, .fullSizeContentView]
+window.isMovableByWindowBackground = true
+
+// WindowGroup scene
+.windowStyle(.hiddenTitleBar)  // NOT .automatic
+// Do NOT use .windowToolbarStyle() — it creates the glass bar
+```
+
+### Sidebar Glass Effect
+
+```swift
+ZStack {
+    // Dark base layer for depth
+    RoundedRectangle(cornerRadius: 12, style: .continuous)
+        .fill(Color(hex: "1D1D1F").opacity(0.65))
+    
+    // System glass material (samples wallpaper)
+    GlassBackground(material: .sidebar, blendingMode: .withinWindow)
+        .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
+}
+.shadow(color: .black.opacity(0.45), radius: 28, x: 0, y: 14)
+```
+
+### Traffic Lights Positioning
+
+The window control buttons (close/minimize/zoom) are repositioned to sit inside the floating sidebar:
+
+```swift
+// Use TrafficLightsPositioner class to offset buttons
+// - Observe didResizeNotification, didMoveNotification, didEndLiveResizeNotification
+// - Capture window weakly to prevent retain cycles
+// - Store baseline positions to prevent offset accumulation
+// - Clean up observers on window close
+```
+
+---
+
+## Video Player
+
+### Edge-to-Edge Playback
+
+When a video is playing:
+- Remove gap between sidebar and video canvas
+- Remove right/bottom insets if sidebar is hidden
+- Fill with pure black background
+- Hide controls after 3 seconds of inactivity
+
+### AVPlayer Optimizations
+
+```swift
+// Asset loading (faster for local files)
+AVURLAsset(url: url, options: [AVURLAssetPreferPreciseDurationAndTimingKey: false])
+
+// Buffer optimization
+playerItem.preferredForwardBufferDuration = 5.0
+
+// Performance settings
+player.automaticallyWaitsToMinimizeStalling = false
+player.preventsDisplaySleepDuringVideoPlayback = true
+player.allowsExternalPlayback = false
+
+// View layer optimizations
+playerView.wantsLayer = true
+playerView.canDrawSubviewsIntoLayer = true
+playerView.layer?.drawsAsynchronously = true
+playerView.layer?.isOpaque = true
+playerView.focusRingType = .none
+```
+
+### Controls Timer (Race-Condition Safe)
+
+```swift
+// Use unique timer ID to prevent race conditions
+@State private var controlsTimerID: UUID? = nil
+
+func startControlsTimer() {
+    let timerID = UUID()
+    controlsTimerID = timerID
+    
+    Task { @MainActor in
+        try? await Task.sleep(for: .seconds(3))
+        guard controlsTimerID == timerID, playerController.isPlaying else { return }
+        withAnimation { showControls = false }
+    }
+}
+```
+
+---
+
+## File Handling
+
+### Security-Scoped Bookmarks
+
+Videos are stored as security-scoped bookmarks to persist access across app launches:
+
+```swift
+// Creating bookmark
+url.bookmarkData(options: .withSecurityScope, ...)
+
+// Resolving bookmark (stale bookmarks are still valid for current session!)
+var isStale = false
+let url = try URL(resolvingBookmarkData: data, options: .withSecurityScope, bookmarkDataIsStale: &isStale)
+// Per Apple docs: always return the URL, refresh bookmark if stale
+
+// Always pair security access
+if url.startAccessingSecurityScopedResource() {
+    securityScopedURL = url
+}
+// Cleanup in onDisappear:
+securityScopedURL?.stopAccessingSecurityScopedResource()
+```
+
+### Duplicate Detection
+
+Compare by standardized file path, not URL object equality:
+
+```swift
+let importPath = url.standardizedFileURL.path
+videos.contains { $0.resolvedURL?.standardizedFileURL.path == importPath }
+```
+
+---
+
+## macOS Quality-of-Life Features
+
+### Info.plist Essentials
+
+| Key | Purpose |
+|-----|---------|
+| `CFBundleIconFile` | App icon |
+| `LSApplicationCategoryType` | App Store category (`public.app-category.video`) |
+| `NSHighResolutionCapable` | Retina support (always `true`) |
+| `NSRequiresAquaSystemAppearance` | Dark mode (`false` = automatic) |
+| `NSHumanReadableCopyright` | About dialog copyright |
+| `NSSupportsAutomaticTermination` | System can auto-quit idle app |
+| `CFBundleDocumentTypes` | File types the app opens |
+| `UTImportedTypeDeclarations` | Custom UTI definitions (e.g., MKV) |
+| `NSContactsUsageDescription` | For loading user's iCloud avatar |
+
+### Entitlements (Sandbox)
+
+```xml
+<key>com.apple.security.app-sandbox</key><true/>
+<key>com.apple.security.files.user-selected.read-write</key><true/>
+<key>com.apple.security.files.bookmarks.app-scope</key><true/>
+```
+
+### Keyboard Shortcuts
+
+| Shortcut | Action |
+|----------|--------|
+| `⌘O` | Import video |
+| `⌘⌥S` | Toggle sidebar |
+| `Space` | Play/pause |
+| `←/→` | Skip 10s / 30s |
+| `⌘←/⌘→` | Skip 60s |
+| `↑/↓` | Volume |
+| `F` | Fullscreen |
+
+### Focus Ring
+
+```swift
+.focusable()
+.focusEffectDisabled()  // Remove blue ring, keep keyboard input
+```
+
+---
+
+## Memory & Resource Management
+
+### Notification Observers
+
+Always capture objects weakly and store observer tokens for cleanup:
+
+```swift
+let observer = center.addObserver(forName: .didResize, object: window, queue: .main) { 
+    [weak self, weak window] _ in
+    guard let self, let window else { return }
+    // ...
+}
+tokens.append(observer)  // Store for later removal
+```
+
+### SwiftUI Timers
+
+Never use `Timer.scheduledTimer` in SwiftUI views (captures struct by value). Use `Task.sleep`:
+
+```swift
+Task { @MainActor in
+    try? await Task.sleep(for: .seconds(3))
+    // Safe to modify @State here
+}
+```
+
+---
+
+## User Profile
+
+Display the macOS user's name and attempt to load their iCloud avatar:
+
+```swift
+// Name
+Text(NSFullUserName())
+
+// Avatar (from Contacts "Me" card)
+1. Import Contacts framework
+2. Request access: CNContactStore().requestAccess(for: .contacts)
+3. Fetch: store.unifiedMeContactWithKeys(toFetch: [CNContactImageDataKey])
+4. Fallback: gradient circle with user's initial
+```
+
+---
+
+## File Structure
+
+```
+OfflineCinema/
+├── OfflineCinemaApp.swift      # App entry, window config, traffic lights
+├── Models/
+│   ├── Video.swift             # Video model with bookmark handling
+│   ├── Collection.swift        # User collections
+│   └── WatchProgress.swift     # Playback progress tracking
+├── Services/
+│   ├── VideoLibrary.swift      # Central state manager
+│   ├── PersistenceService.swift # JSON save/load
+│   └── ThumbnailGenerator.swift # Video metadata extraction
+├── Views/
+│   ├── ContentView.swift       # Main layout with floating sidebar
+│   ├── SidebarView.swift       # Navigation sidebar
+│   ├── VideoGridView.swift     # Video thumbnail grid
+│   ├── VideoPlayerView.swift   # Full-featured player
+│   ├── LibraryDetailView.swift # Grid + empty state + drop zone
+│   └── Components/
+│       ├── GlassBackground.swift    # NSVisualEffectView wrapper
+│       ├── VisualEffectBackground.swift
+│       └── WindowStateObserver.swift # Fullscreen detection
+└── Assets.xcassets/
+```
+
+---
+
+## Testing Checklist
+
+Before shipping, verify:
+
+- [ ] Videos play smoothly (no dropped frames)
+- [ ] Drag-and-drop import works
+- [ ] Double-clicking video file opens in app
+- [ ] Sidebar toggle works (⌘⌥S)
+- [ ] Fullscreen mode hides sidebar, goes edge-to-edge
+- [ ] Playback resumes from last position
+- [ ] Watch progress updates correctly
+- [ ] App respects dark/light mode
+- [ ] Traffic lights position correctly after window resize
+- [ ] No memory leaks on repeated video open/close
+- [ ] Stale bookmarks don't break playback
