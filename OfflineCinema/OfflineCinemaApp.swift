@@ -28,6 +28,13 @@ struct OfflineCinemaApp: App {
                 .keyboardShortcut("o", modifiers: .command)
             }
             
+            CommandGroup(after: .newItem) {
+                Button("Show Library") {
+                    NotificationCenter.default.post(name: .showMainWindow, object: nil)
+                }
+                .keyboardShortcut("1", modifiers: .command)
+            }
+            
             CommandMenu("View") {
                 Button("Toggle Sidebar") {
                     NotificationCenter.default.post(name: .toggleSidebar, object: nil)
@@ -43,6 +50,7 @@ struct OfflineCinemaApp: App {
 @MainActor
 class AppDelegate: NSObject, NSApplicationDelegate {
     private let trafficLights = TrafficLightsPositioner(offsetX: 14, offsetY: -10)
+    private var showWindowObserver: NSObjectProtocol?
     
     func applicationDidFinishLaunching(_ notification: Notification) {
         NSApp.activate(ignoringOtherApps: true)
@@ -53,6 +61,27 @@ class AppDelegate: NSObject, NSApplicationDelegate {
                 window.makeKeyAndOrderFront(nil)
             }
         }
+        
+        // Listen for "Show Library" menu command
+        showWindowObserver = NotificationCenter.default.addObserver(
+            forName: .showMainWindow,
+            object: nil,
+            queue: .main
+        ) { [weak self] _ in
+            self?.showMainWindow()
+        }
+    }
+    
+    private func showMainWindow() {
+        // Since isReleasedWhenClosed = false, the window remains in memory
+        // Find the main window and bring it to front
+        for window in NSApplication.shared.windows {
+            if window.contentView != nil {
+                window.makeKeyAndOrderFront(nil)
+                configureWindow(window)
+            }
+        }
+        NSApp.activate(ignoringOtherApps: true)
     }
     
     func applicationShouldHandleReopen(_ sender: NSApplication, hasVisibleWindows flag: Bool) -> Bool {
@@ -206,5 +235,6 @@ extension Notification.Name {
     static let importVideo = Notification.Name("importVideo")
     static let openVideoFile = Notification.Name("openVideoFile")
     static let toggleSidebar = Notification.Name("toggleSidebar")
+    static let showMainWindow = Notification.Name("showMainWindow")
 }
 
