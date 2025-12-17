@@ -41,6 +41,17 @@ struct OfflineCinemaApp: App {
                 }
                 .keyboardShortcut("s", modifiers: [.command, .option])
             }
+            
+            CommandMenu("Window") {
+                Button("Show Library") {
+                    NotificationCenter.default.post(name: .showMainWindow, object: nil)
+                }
+                .keyboardShortcut("1", modifiers: .command)
+                
+                Divider()
+                
+                // SwiftUI will automatically add window management items here
+            }
         }
     }
 }
@@ -68,7 +79,9 @@ class AppDelegate: NSObject, NSApplicationDelegate {
             object: nil,
             queue: .main
         ) { [weak self] _ in
-            self?.showMainWindow()
+            Task { @MainActor [weak self] in
+                self?.showMainWindow()
+            }
         }
     }
     
@@ -109,6 +122,11 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     func configureWindow(_ window: NSWindow) {
         window.titlebarAppearsTransparent = true
         window.titleVisibility = .hidden
+        
+        // Set window title so it appears in Window menu (even though title is hidden)
+        if window.title.isEmpty {
+            window.title = "Library"
+        }
         
         // Remove any toolbar to eliminate the glass titlebar effect
         window.toolbar = nil
