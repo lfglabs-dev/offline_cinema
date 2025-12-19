@@ -28,13 +28,6 @@ struct OfflineCinemaApp: App {
                 .keyboardShortcut("o", modifiers: .command)
             }
             
-            CommandGroup(after: .newItem) {
-                Button("Show Library") {
-                    NotificationCenter.default.post(name: .showMainWindow, object: nil)
-                }
-                .keyboardShortcut("1", modifiers: .command)
-            }
-            
             CommandMenu("View") {
                 Button("Toggle Sidebar") {
                     NotificationCenter.default.post(name: .toggleSidebar, object: nil)
@@ -42,15 +35,14 @@ struct OfflineCinemaApp: App {
                 .keyboardShortcut("s", modifiers: [.command, .option])
             }
             
-            CommandMenu("Window") {
-                Button("Show Library") {
+            // Add to existing Window menu (preserves standard window list behavior)
+            CommandGroup(before: .windowList) {
+                Button("Library") {
                     NotificationCenter.default.post(name: .showMainWindow, object: nil)
                 }
-                .keyboardShortcut("1", modifiers: .command)
+                .keyboardShortcut("0", modifiers: .command)
                 
                 Divider()
-                
-                // SwiftUI will automatically add window management items here
             }
         }
     }
