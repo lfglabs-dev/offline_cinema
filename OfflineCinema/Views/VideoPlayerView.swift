@@ -18,6 +18,7 @@ struct VideoPlayerView: View {
     @State private var controlsTimerID: UUID? = nil
     @State private var securityScopedURL: URL? // Track URL for security-scoped access cleanup
     @Environment(\.dismiss) private var dismiss
+    @FocusState private var isFocused: Bool
     
     var body: some View {
         ZStack {
@@ -70,6 +71,10 @@ struct VideoPlayerView: View {
         }
         .onAppear {
             setupPlayer()
+            // Delay focus acquisition to ensure view is ready for keyboard input
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
+                isFocused = true
+            }
         }
         .onDisappear {
             saveProgress()
@@ -80,6 +85,7 @@ struct VideoPlayerView: View {
             saveProgress()
         }
         .focusable()
+        .focused($isFocused)
         .focusEffectDisabled() // Remove blue focus ring
         .onKeyPress { keyPress in
             handleKeyPress(keyPress)
@@ -113,7 +119,9 @@ struct VideoPlayerView: View {
     }
     
     // MARK: - Top Bar
-    
+
+    @SceneStorage("sidebarVisible") private var sidebarVisible: Bool = true
+
     private var topBar: some View {
         HStack {
             Button {
@@ -126,7 +134,7 @@ struct VideoPlayerView: View {
                     .background(Circle().fill(.white.opacity(0.2)))
             }
             .buttonStyle(.plain)
-            
+
             Button {
                 NotificationCenter.default.post(name: .toggleSidebar, object: nil)
             } label: {
@@ -137,16 +145,16 @@ struct VideoPlayerView: View {
                     .background(Circle().fill(.white.opacity(0.2)))
             }
             .buttonStyle(.plain)
-            
+
             Spacer()
-            
+
             Text(video.title)
                 .font(.system(size: 14, weight: .semibold))
                 .foregroundColor(.white)
                 .lineLimit(1)
-            
+
             Spacer()
-            
+
             // Settings menu
             Menu {
                 settingsMenu
@@ -162,7 +170,9 @@ struct VideoPlayerView: View {
             .frame(width: 32, height: 32)
         }
         .padding(.horizontal, 20)
-        .padding(.top, 20)
+        // Move buttons down when sidebar is hidden to clear traffic lights
+        .padding(.top, sidebarVisible ? 20 : 52)
+        .animation(.easeInOut(duration: 0.18), value: sidebarVisible)
     }
     
     // MARK: - Bottom Controls
@@ -287,7 +297,7 @@ struct VideoPlayerView: View {
     }
     
     // MARK: - Progress Bar
-    
+
     private var progressBar: some View {
         GeometryReader { geo in
             ZStack(alignment: .leading) {
@@ -295,12 +305,12 @@ struct VideoPlayerView: View {
                 Rectangle()
                     .fill(.white.opacity(0.3))
                     .frame(height: 4)
-                
+
                 // Progress
                 Rectangle()
                     .fill(Color(hex: "DC2626"))
                     .frame(width: geo.size.width * playerController.progress, height: 4)
-                
+
                 // Scrubber handle
                 Circle()
                     .fill(.white)
@@ -316,6 +326,8 @@ struct VideoPlayerView: View {
                         playerController.seek(to: progress)
                     }
             )
+            // Prevent window drag when interacting with progress bar
+            .background(WindowDragBlocker())
         }
         .frame(height: 12)
     }
@@ -832,5 +844,24 @@ enum PlaybackSpeed: Float, CaseIterable, Identifiable {
         }
         return String(format: "%.1f×", rate)
     }
+}
+
+// MARK: - Window Drag Blocker
+
+/// An NSView that prevents window dragging when placed as a background.
+/// Used on interactive controls (like the progress bar) to stop `isMovableByWindowBackground` from interfering.
+private struct WindowDragBlocker: NSViewRepresentable {
+    func makeNSView(context: Context) -> NSView {
+        let view = NonDraggableView()
+        view.wantsLayer = true
+        view.layer?.backgroundColor = .clear
+        return view
+    }
+
+    func updateNSView(_ nsView: NSView, context: Context) {}
+}
+
+private final class NonDraggableView: NSView {
+    override var mouseDownCanMoveWindow: Bool { false }
 }
 

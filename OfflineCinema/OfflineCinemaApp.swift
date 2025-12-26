@@ -78,14 +78,43 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     }
     
     private func showMainWindow() {
-        // Since isReleasedWhenClosed = false, the window remains in memory
-        // Find the main window and bring it to front
+        // Find existing main window (with our content) and bring it to front
+        // Check if window is visible (not just in the windows array)
+        var foundVisibleWindow = false
         for window in NSApplication.shared.windows {
-            if window.contentView != nil {
+            // Check if this is our main content window (not a panel, sheet, or invisible)
+            if window.contentView != nil &&
+               !(window is NSPanel) &&
+               window.styleMask.contains(.titled) &&
+               window.isVisible {
                 window.makeKeyAndOrderFront(nil)
                 configureWindow(window)
+                foundVisibleWindow = true
+                break
             }
         }
+
+        // If no visible window, try to show a hidden one or create new
+        if !foundVisibleWindow {
+            // First, try to find and show a hidden window
+            for window in NSApplication.shared.windows {
+                if window.contentView != nil &&
+                   !(window is NSPanel) &&
+                   window.styleMask.contains(.titled) {
+                    window.makeKeyAndOrderFront(nil)
+                    configureWindow(window)
+                    foundVisibleWindow = true
+                    break
+                }
+            }
+
+            // If still no window, create a new one
+            if !foundVisibleWindow {
+                // This action tells SwiftUI's WindowGroup to create a new window
+                NSApp.sendAction(#selector(NSWindow.newWindowForTab(_:)), to: nil, from: nil)
+            }
+        }
+
         NSApp.activate(ignoringOtherApps: true)
     }
     

@@ -1,0 +1,23 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(swift build:*)",
+      "Bash(swift package:*)",
+      "Bash(swift test:*)",
+      "Bash(./build-app.sh)",
+      "Bash(./build.sh)",
+      "Bash(open OfflineCinema.app)",
+      "Bash(open *.xcodeproj)",
+      "Bash(xcodebuild:*)",
+      "Bash(pkill:*)",
+      "Bash(osascript:*)",
+      "Bash(ls:*)",
+      "Bash(mkdir:*)",
+      "Bash(rm -rf .build)",
+      "Bash(rm -rf OfflineCinema.app)",
+      "Bash(cp:*)",
+      "Bash(git:*)"
+    ],
+    "deny": []
+  }
+}
