@@ -12,9 +12,10 @@ import AppKit
 struct OfflineCinemaApp: App {
     @StateObject private var videoLibrary = VideoLibrary()
     @NSApplicationDelegateAdaptor(AppDelegate.self) var appDelegate
-    
+    @Environment(\.openWindow) private var openWindow
+
     var body: some Scene {
-        WindowGroup {
+        WindowGroup(id: "library") {
             ContentView()
                 .environmentObject(videoLibrary)
         }
@@ -27,23 +28,35 @@ struct OfflineCinemaApp: App {
                 }
                 .keyboardShortcut("o", modifiers: .command)
             }
-            
+
             CommandMenu("View") {
                 Button("Toggle Sidebar") {
                     NotificationCenter.default.post(name: .toggleSidebar, object: nil)
                 }
                 .keyboardShortcut("s", modifiers: [.command, .option])
             }
-            
+
             // Add to existing Window menu (preserves standard window list behavior)
             CommandGroup(before: .windowList) {
-                Button("Library") {
-                    NotificationCenter.default.post(name: .showMainWindow, object: nil)
-                }
-                .keyboardShortcut("0", modifiers: .command)
-                
+                ShowLibraryButton()
+
                 Divider()
             }
+        }
+    }
+}
+
+// Separate view to access openWindow environment
+struct ShowLibraryButton: View {
+    @Environment(\.openWindow) private var openWindow
+
+    var body: some View {
+        Button("Library") {
+            openWindow(id: "library")
+        }
+        .keyboardShortcut("0", modifiers: .command)
+        .onReceive(NotificationCenter.default.publisher(for: .showMainWindow)) { _ in
+            openWindow(id: "library")
         }
     }
 }
@@ -53,83 +66,42 @@ struct OfflineCinemaApp: App {
 @MainActor
 class AppDelegate: NSObject, NSApplicationDelegate {
     private let trafficLights = TrafficLightsPositioner(offsetX: 14, offsetY: -10)
-    private var showWindowObserver: NSObjectProtocol?
-    
+
     func applicationDidFinishLaunching(_ notification: Notification) {
         NSApp.activate(ignoringOtherApps: true)
-        
+
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
             for window in NSApplication.shared.windows {
                 self.configureWindow(window)
                 window.makeKeyAndOrderFront(nil)
             }
         }
-        
-        // Listen for "Show Library" menu command
-        showWindowObserver = NotificationCenter.default.addObserver(
-            forName: .showMainWindow,
-            object: nil,
-            queue: .main
-        ) { [weak self] _ in
-            Task { @MainActor [weak self] in
-                self?.showMainWindow()
-            }
-        }
     }
-    
-    private func showMainWindow() {
-        // Find existing main window (with our content) and bring it to front
-        // Check if window is visible (not just in the windows array)
-        var foundVisibleWindow = false
-        for window in NSApplication.shared.windows {
-            // Check if this is our main content window (not a panel, sheet, or invisible)
-            if window.contentView != nil &&
-               !(window is NSPanel) &&
-               window.styleMask.contains(.titled) &&
-               window.isVisible {
-                window.makeKeyAndOrderFront(nil)
-                configureWindow(window)
-                foundVisibleWindow = true
-                break
-            }
-        }
 
-        // If no visible window, try to show a hidden one or create new
-        if !foundVisibleWindow {
-            // First, try to find and show a hidden window
-            for window in NSApplication.shared.windows {
+    func applicationShouldHandleReopen(_ sender: NSApplication, hasVisibleWindows flag: Bool) -> Bool {
+        if !flag {
+            // Try to show existing windows first
+            for window in sender.windows {
                 if window.contentView != nil &&
                    !(window is NSPanel) &&
                    window.styleMask.contains(.titled) {
                     window.makeKeyAndOrderFront(nil)
                     configureWindow(window)
-                    foundVisibleWindow = true
-                    break
+                    return true
                 }
             }
-
-            // If still no window, create a new one
-            if !foundVisibleWindow {
-                // This action tells SwiftUI's WindowGroup to create a new window
-                NSApp.sendAction(#selector(NSWindow.newWindowForTab(_:)), to: nil, from: nil)
-            }
-        }
-
-        NSApp.activate(ignoringOtherApps: true)
-    }
-    
-    func applicationShouldHandleReopen(_ sender: NSApplication, hasVisibleWindows flag: Bool) -> Bool {
-        if !flag {
-            for window in sender.windows {
-                window.makeKeyAndOrderFront(nil)
-            }
+            // No window found - post notification for SwiftUI to handle
+            NotificationCenter.default.post(name: .showMainWindow, object: nil)
         }
         return true
     }
-    
+
     func applicationDidBecomeActive(_ notification: Notification) {
+        // Only bring windows to front if they exist and are visible
         for window in NSApplication.shared.windows {
-            window.makeKeyAndOrderFront(nil)
+            if window.isVisible {
+                window.makeKeyAndOrderFront(nil)
+            }
         }
     }
     
