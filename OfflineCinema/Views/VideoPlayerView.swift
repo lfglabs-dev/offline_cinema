@@ -17,6 +17,8 @@ struct VideoPlayerView: View {
     @State private var showControls = true
     @State private var controlsTimerID: UUID? = nil
     @State private var securityScopedURL: URL? // Track URL for security-scoped access cleanup
+    @State private var showVolumeIndicator = false
+    @State private var volumeIndicatorTimerID: UUID? = nil
     @Environment(\.dismiss) private var dismiss
     @FocusState private var isFocused: Bool
     
@@ -27,9 +29,16 @@ struct VideoPlayerView: View {
             
             // Video player
             if let player = playerController.player {
-                VideoPlayerRepresentable(player: player, playerController: playerController)
+                VideoPlayerRepresentable(
+                    player: player,
+                    playerController: playerController,
+                    onMouseMoved: { resetControlsTimer() }
+                )
                     .ignoresSafeArea()
-                    .onTapGesture {
+                    .onTapGesture(count: 2) {
+                        toggleFullscreen()
+                    }
+                    .onTapGesture(count: 1) {
                         toggleControls()
                     }
             } else {
@@ -67,6 +76,12 @@ struct VideoPlayerView: View {
             if showControls {
                 controlsOverlay
                     .transition(.opacity)
+            }
+
+            // Volume indicator overlay
+            if showVolumeIndicator {
+                volumeOverlay
+                    .transition(.opacity.combined(with: .scale(scale: 0.8)))
             }
         }
         .onAppear {
@@ -462,7 +477,85 @@ struct VideoPlayerView: View {
             window.toggleFullScreen(nil)
         }
     }
-    
+
+    private func resetControlsTimer() {
+        if showControls && playerController.isPlaying {
+            startControlsTimer()
+        }
+    }
+
+    private func showVolumeOverlay() {
+        let timerID = UUID()
+        volumeIndicatorTimerID = timerID
+
+        withAnimation(.easeOut(duration: 0.15)) {
+            showVolumeIndicator = true
+        }
+
+        Task { @MainActor in
+            try? await Task.sleep(for: .seconds(1.0))
+            guard volumeIndicatorTimerID == timerID else { return }
+            withAnimation(.easeOut(duration: 0.3)) {
+                showVolumeIndicator = false
+            }
+        }
+    }
+
+    private func toggleWatchedStatus() {
+        Task {
+            if video.watchState == .finished {
+                await library.markAsUnwatched(video)
+            } else {
+                await library.markAsFinished(video)
+            }
+        }
+    }
+
+    // MARK: - Volume Overlay
+
+    private var volumeOverlay: some View {
+        HStack(spacing: 12) {
+            Image(systemName: volumeIconName)
+                .font(.system(size: 20, weight: .medium))
+                .foregroundColor(.white)
+                .frame(width: 24)
+
+            GeometryReader { geo in
+                ZStack(alignment: .leading) {
+                    Capsule()
+                        .fill(.white.opacity(0.3))
+                    Capsule()
+                        .fill(.white)
+                        .frame(width: geo.size.width * CGFloat(playerController.volume))
+                }
+            }
+            .frame(width: 120, height: 6)
+        }
+        .padding(.horizontal, 20)
+        .padding(.vertical, 14)
+        .background(
+            RoundedRectangle(cornerRadius: 12, style: .continuous)
+                .fill(.ultraThinMaterial)
+                .overlay(
+                    RoundedRectangle(cornerRadius: 12, style: .continuous)
+                        .strokeBorder(.white.opacity(0.1), lineWidth: 1)
+                )
+        )
+    }
+
+    private var volumeIconName: String {
+        let vol = playerController.volume
+        if vol <= 0 {
+            return "speaker.slash.fill"
+        } else if vol < 0.33 {
+            return "speaker.wave.1.fill"
+        } else if vol < 0.66 {
+            return "speaker.wave.2.fill"
+        } else {
+            return "speaker.wave.3.fill"
+        }
+    }
+
     private func handleKeyPress(_ keyPress: KeyPress) -> KeyPress.Result {
         switch keyPress.key {
         case .space:
@@ -476,19 +569,42 @@ struct VideoPlayerView: View {
             return .handled
         case .upArrow:
             playerController.adjustVolume(delta: 0.1)
+            showVolumeOverlay()
             return .handled
         case .downArrow:
             playerController.adjustVolume(delta: -0.1)
+            showVolumeOverlay()
             return .handled
         case .escape:
             closePlayer()
             return .handled
         default:
-            if keyPress.characters == "f" {
-                toggleFullscreen()
-                return .handled
+            let char = keyPress.characters.lowercased()
+            switch char {
+                case "f":
+                    toggleFullscreen()
+                    return .handled
+                case "[":
+                    playerController.decreaseSpeed()
+                    return .handled
+                case "]":
+                    playerController.increaseSpeed()
+                    return .handled
+                case "s":
+                    playerController.cycleSubtitles()
+                    return .handled
+                case "a":
+                    playerController.cycleAudioTracks()
+                    return .handled
+                case "i":
+                    playerController.togglePiP()
+                    return .handled
+                case "m":
+                    toggleWatchedStatus()
+                    return .handled
+                default:
+                    return .ignored
             }
-            return .ignored
         }
     }
 }
@@ -512,6 +628,8 @@ class PlayerController: ObservableObject {
     
     @Published var subtitleOptions: [AVMediaSelectionOption]?
     @Published var audioOptions: [AVMediaSelectionOption]?
+    @Published var currentSubtitleIndex: Int = -1 // -1 = off
+    @Published var currentAudioIndex: Int = 0
     
     private var timeObserver: Any?
     private var pipController: AVPictureInPictureController?
@@ -524,9 +642,13 @@ class PlayerController: ObservableObject {
     var currentTimeFormatted: String {
         formatTime(currentTime)
     }
-    
+
     var durationFormatted: String {
         formatTime(duration)
+    }
+
+    var volume: Float {
+        player?.volume ?? 1.0
     }
     
     func load(url: URL) {
@@ -686,7 +808,56 @@ class PlayerController: ObservableObject {
             player?.rate = rate
         }
     }
-    
+
+    func increaseSpeed() {
+        let speeds = PlaybackSpeed.allCases.map { $0.rate }
+        if let currentIndex = speeds.firstIndex(of: playbackSpeed) {
+            let nextIndex = min(currentIndex + 1, speeds.count - 1)
+            setSpeed(speeds[nextIndex])
+        } else {
+            // Find nearest higher speed
+            if let nextSpeed = speeds.first(where: { $0 > playbackSpeed }) {
+                setSpeed(nextSpeed)
+            }
+        }
+    }
+
+    func decreaseSpeed() {
+        let speeds = PlaybackSpeed.allCases.map { $0.rate }
+        if let currentIndex = speeds.firstIndex(of: playbackSpeed) {
+            let prevIndex = max(currentIndex - 1, 0)
+            setSpeed(speeds[prevIndex])
+        } else {
+            // Find nearest lower speed
+            if let prevSpeed = speeds.last(where: { $0 < playbackSpeed }) {
+                setSpeed(prevSpeed)
+            }
+        }
+    }
+
+    func cycleSubtitles() {
+        guard let options = subtitleOptions, !options.isEmpty else { return }
+
+        // Cycle: off -> first -> second -> ... -> last -> off
+        if currentSubtitleIndex < 0 {
+            currentSubtitleIndex = 0
+        } else if currentSubtitleIndex >= options.count - 1 {
+            currentSubtitleIndex = -1
+        } else {
+            currentSubtitleIndex += 1
+        }
+
+        let selectedOption = currentSubtitleIndex >= 0 ? options[currentSubtitleIndex] : nil
+        selectSubtitle(selectedOption)
+    }
+
+    func cycleAudioTracks() {
+        guard let options = audioOptions, options.count > 1 else { return }
+
+        currentAudioIndex = (currentAudioIndex + 1) % options.count
+        selectAudioTrack(options[currentAudioIndex])
+    }
+
     func adjustVolume(delta: Float) {
         guard let player = player else { return }
         player.volume = max(0, min(1, player.volume + delta))
@@ -775,41 +946,72 @@ class PlayerController: ObservableObject {
 struct VideoPlayerRepresentable: NSViewRepresentable {
     let player: AVPlayer
     let playerController: PlayerController
-    
-    func makeNSView(context: Context) -> AVPlayerView {
-        let playerView = AVPlayerView()
+    var onMouseMoved: (() -> Void)?
+
+    func makeNSView(context: Context) -> MouseTrackingPlayerView {
+        let playerView = MouseTrackingPlayerView()
         playerView.player = player
         playerView.controlsStyle = .none // We use custom controls
         playerView.showsFullScreenToggleButton = false
         playerView.allowsPictureInPicturePlayback = true
         playerView.videoGravity = .resizeAspect
         playerView.focusRingType = .none // Remove blue focus ring border
-        
+        playerView.onMouseMoved = onMouseMoved
+
         // Performance optimizations
         playerView.wantsLayer = true
         playerView.layerContentsRedrawPolicy = .onSetNeedsDisplay
         playerView.canDrawSubviewsIntoLayer = true // Flatten view hierarchy for GPU
-        
+
         // Optimize layer for video content
         if let layer = playerView.layer {
             layer.drawsAsynchronously = true
             layer.shouldRasterize = false // Don't rasterize video content
             layer.isOpaque = true
         }
-        
+
         // Give the controller a reference to the player view for PiP
         DispatchQueue.main.async {
             playerController.setPlayerView(playerView)
         }
-        
+
         return playerView
     }
-    
-    func updateNSView(_ nsView: AVPlayerView, context: Context) {
+
+    func updateNSView(_ nsView: MouseTrackingPlayerView, context: Context) {
         // Only update player if it changed (avoid unnecessary work)
         if nsView.player !== player {
             nsView.player = player
         }
+        nsView.onMouseMoved = onMouseMoved
+    }
+}
+
+/// AVPlayerView subclass that tracks mouse movement
+final class MouseTrackingPlayerView: AVPlayerView {
+    var onMouseMoved: (() -> Void)?
+    private var trackingArea: NSTrackingArea?
+
+    override func updateTrackingAreas() {
+        super.updateTrackingAreas()
+
+        if let existing = trackingArea {
+            removeTrackingArea(existing)
+        }
+
+        let area = NSTrackingArea(
+            rect: bounds,
+            options: [.mouseMoved, .activeInKeyWindow, .inVisibleRect],
+            owner: self,
+            userInfo: nil
+        )
+        addTrackingArea(area)
+        trackingArea = area
+    }
+
+    override func mouseMoved(with event: NSEvent) {
+        super.mouseMoved(with: event)
+        onMouseMoved?()
     }
 }
 
