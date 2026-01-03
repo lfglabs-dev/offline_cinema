@@ -35,12 +35,11 @@ struct VideoPlayerView: View {
                     onMouseMoved: { resetControlsTimer() }
                 )
                     .ignoresSafeArea()
-                    .onTapGesture(count: 2) {
-                        toggleFullscreen()
-                    }
-                    .onTapGesture(count: 1) {
-                        toggleControls()
-                    }
+                    .gesture(
+                        TapGesture(count: 2)
+                            .onEnded { toggleFullscreen() }
+                            .exclusively(before: TapGesture(count: 1).onEnded { toggleControls() })
+                    )
             } else {
                 ProgressView()
                     .scaleEffect(1.5)
@@ -864,6 +863,13 @@ class PlayerController: ObservableObject {
     }
     
     func selectSubtitle(_ option: AVMediaSelectionOption?) {
+        // Sync currentSubtitleIndex with the selection
+        if let option = option, let options = subtitleOptions {
+            currentSubtitleIndex = options.firstIndex(of: option) ?? -1
+        } else {
+            currentSubtitleIndex = -1
+        }
+
         guard let asset = player?.currentItem?.asset else { return }
         Task {
             if let group = try? await asset.loadMediaSelectionGroup(for: .legible) {
@@ -871,8 +877,13 @@ class PlayerController: ObservableObject {
             }
         }
     }
-    
+
     func selectAudioTrack(_ option: AVMediaSelectionOption) {
+        // Sync currentAudioIndex with the selection
+        if let options = audioOptions {
+            currentAudioIndex = options.firstIndex(of: option) ?? 0
+        }
+
         guard let asset = player?.currentItem?.asset else { return }
         Task {
             if let group = try? await asset.loadMediaSelectionGroup(for: .audible) {
