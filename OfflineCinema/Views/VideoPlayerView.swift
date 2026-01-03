@@ -502,10 +502,12 @@ struct VideoPlayerView: View {
 
     private func toggleWatchedStatus() {
         Task {
-            if video.watchState == .finished {
-                await library.markAsUnwatched(video)
+            // Get current video state from library to avoid stale state issues
+            let currentVideo = library.videos.first { $0.id == video.id } ?? video
+            if currentVideo.watchState == .finished {
+                await library.markAsUnwatched(currentVideo)
             } else {
-                await library.markAsFinished(video)
+                await library.markAsFinished(currentVideo)
             }
         }
     }
@@ -567,12 +569,16 @@ struct VideoPlayerView: View {
             playerController.skip(seconds: keyPress.modifiers.contains(.command) ? 60 : 30)
             return .handled
         case .upArrow:
-            playerController.adjustVolume(delta: 0.1)
-            showVolumeOverlay()
+            if playerController.player != nil {
+                playerController.adjustVolume(delta: 0.1)
+                showVolumeOverlay()
+            }
             return .handled
         case .downArrow:
-            playerController.adjustVolume(delta: -0.1)
-            showVolumeOverlay()
+            if playerController.player != nil {
+                playerController.adjustVolume(delta: -0.1)
+                showVolumeOverlay()
+            }
             return .handled
         case .escape:
             closePlayer()
